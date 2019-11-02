@@ -5,7 +5,6 @@ import pickle
 import numpy as np
 from scipy import sparse
 
-
 def makedirs(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
@@ -26,6 +25,38 @@ def read_jsonlist(input_filename):
     with open(input_filename, 'r', encoding='utf-8') as input_file:
         for line in input_file:
             yield json.loads(line, encoding='utf-8')
+
+class LazyJsonlistReader:
+    """
+    Adapted from https://stackoverflow.com/a/39564774/5712749
+    Since original code loops and re-loops through a large list, created by a non-lazy
+    version of `read_jsonlist`, we want a resetting generator
+
+    Usage:
+        `data = LazyJsonlistReader(fpath)`
+    """
+    def __init__(self, fpath):
+        self.iterator_factory = lambda: read_jsonlist(fpath)
+        self._fpath = fpath
+        self._len = None
+
+    def __iter__(self):
+        """
+        Will reset the generator each time this is called
+        """
+        return self.iterator_factory()
+
+    def __len__(self):
+        """
+        Read length of dataset and cache
+        """
+        if self._length is None:
+            with open(self._fpath) as f:
+                for i, l in enumerate(f):
+                    pass
+            self._length = i + 1
+        return self._length
+
 
 
 def write_jsonlist(list_of_json_objects, output_filename, sort_keys=True):

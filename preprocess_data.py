@@ -2,6 +2,9 @@ import os
 import re
 import sys
 import string
+import json
+import multiprocessing
+import itertools
 from optparse import OptionParser
 from collections import Counter
 
@@ -9,6 +12,7 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 from scipy.io import savemat
+from gensim.utils import chunkize
 
 import file_handling as fh
 
@@ -36,11 +40,23 @@ alphanum = re.compile("^[a-zA-Z0-9_]+$")
 def main(args):
     usage = "%prog train.jsonlist output_dir"
     parser = OptionParser(usage=usage)
-    parser.add_option(
+    label_parser = parser.add_mutually_exclusive_group()
+    label_parser.add_option(
         "--label",
         dest="label",
-        default=None,
+        default=None,   
         help="field(s) to use as label (comma-separated): default=%default",
+    )
+    label_parser.add_option(
+        # c.f. https://stackoverflow.com/a/18609361/5712749
+        '--label_dicts',
+        dest="label_dicts",
+        type=json.loads,
+        default=None,
+        help="""
+        field(s) to use as label along with their values, format as json dict, e.g.,
+        "{'label_1': ['class_1_a', 'class_1_b'], 'label_2': ['class_2_a', 'class_2_b']}"
+        """
     )
     parser.add_option(
         "--test",
@@ -113,11 +129,23 @@ def main(args):
         help="Minimum token length: default=%default",
     )
     parser.add_option(
+        "--ngram_min",
+        dest="ngram_min",
+        default=1,
+        help="n-grams lower bound",
+    )
+    parser.add_option(
+        "--ngram_max",
+        dest="ngram_max",
+        default=1,
+        help="n-grams upper bound",
+    )
+    parser.add_option(
         "--vocab-size",
         dest="vocab_size",
         default=None,
         help="Size of the vocabulary (by most common, following above exclusions): default=%default",
-    )
+    )    
     parser.add_option(
         "--seed",
         dest="seed",
@@ -133,8 +161,10 @@ def main(args):
     test_infile = options.test
     train_prefix = options.train_prefix
     test_prefix = options.test_prefix
-    label_fields = options.label
+    label_fields = options.label or options.label_dicts
     min_doc_count = int(options.min_doc_count)
+    ngram_range = int(options.ngram_min), int(options.ngram_max)
+    min_doc_count = int(options.min_doc_count)    
     max_doc_freq = float(options.max_doc_freq)
     vocab_size = options.vocab_size
     stopwords = options.stopwords
@@ -160,6 +190,7 @@ def main(args):
         test_prefix,
         min_doc_count,
         max_doc_freq,
+        ngram_range,
         vocab_size,
         stopwords,
         keep_num,
@@ -179,6 +210,7 @@ def preprocess_data(
     test_prefix,
     min_doc_count=0,
     max_doc_freq=1.0,
+    ngram_range=(1, 1),
     vocab_size=None,
     stopwords=None,
     keep_num=False,
@@ -187,6 +219,8 @@ def preprocess_data(
     lower=True,
     min_length=3,
     label_fields=None,
+    workers=1,
+    proc_multiplier=100,
 ):
 
     if stopwords == "mallet":
@@ -219,11 +253,11 @@ def preprocess_data(
         test_items = []
         n_test = 0
 
-    all_items = train_items + test_items
+    all_items = itertools.chain(train_items, test_items)
     n_items = n_train + n_test
 
-    label_lists = {}
-    if label_fields is not None:
+    if isinstance(label_fields, str):
+        label_lists = {}
         if "," in label_fields:
             label_fields = label_fields.split(",")
         else:
@@ -238,24 +272,15 @@ def preprocess_data(
             n_labels = len(label_list)
             print("Found label %s with %d classes" % (label_name, n_labels))
             label_lists[label_name] = label_list
-    else:
-        label_fields = []
+    if isinstance(label_fields, dict):
+        label_lists = {k: sorted(list(set(v))) for k, v in label_fields.items()}
+        label_fields = list(label_lists.keys())
+    if label_fields is None:
+            label_fields = []
 
-    # make vocabulary
-    train_parsed = []
-    test_parsed = []
-
-    print("Parsing %d documents" % n_items)
-    word_counts = Counter()
-    doc_counts = Counter()
-    count = 0
-
-    vocab = None
-    for i, item in enumerate(all_items):
-        if i % 1000 == 0 and count > 0:
-            print(i)
-
-        text = item["text"]
+    # to pass to pool.imap
+    def _process_item(item):
+        text = item['text']
         tokens, _ = tokenize(
             text,
             strip_html=strip_html,
@@ -264,18 +289,48 @@ def preprocess_data(
             keep_alphanum=keep_alphanum,
             min_length=min_length,
             stopwords=stopword_set,
+            ngram_range=ngram_range,
             vocab=vocab,
         )
+        labels = None
+        if label_fields:
+            labels = {label_field: item[label_field] for label_field in label_fields}
+            
+        return item.get('id', None), tokens, labels
+    
+    # make vocabulary
+    train_ids, train_parsed, train_labels = [], [], []
+    test_ids, test_parsed, test_labels = [], [], []
 
-        # store the parsed documents
-        if i < n_train:
-            train_parsed.append(tokens)
-        else:
-            test_parsed.append(tokens)
+    print("Parsing documents")
+    word_counts = Counter()
+    doc_counts = Counter()
 
-        # keep track fo the number of documents with each word
-        word_counts.update(tokens)
-        doc_counts.update(set(tokens))
+    vocab = None
+
+    # process in blocks
+    pool = multiprocessing.Pool(workers)
+    chunksize = proc_multiplier * workers
+    for i, group in enumerate(i, chunkize(_process_item, chunksize=chunksize)):
+        print(f'On group {i} of {len(all_items) // chunksize}')
+        for ids, tokens, labels in pool.imap(_process_item, group):
+            # store the parsed documents
+            if i < n_train:
+                if ids is not None:
+                    train_ids.append(ids)
+                if labels is not None:
+                    train_labels.append(labels)
+                train_parsed.append(tokens)
+            else:
+                if ids is not None:
+                    test_ids.append(ids)
+                if labels is not None:
+                    test_labels.append(labels)
+                test_parsed.append(tokens)
+
+            # keep track fo the number of documents with each word
+            word_counts.update(tokens)
+            doc_counts.update(set(tokens))
 
     print("Size of full vocabulary=%d" % len(word_counts))
 
@@ -311,8 +366,8 @@ def preprocess_data(
     train_X_sage, tr_aspect, tr_no_aspect, tr_widx, vocab_for_sage = process_subset(
         train_items,
         train_parsed,
+        train_labels,
         label_fields,
-        label_lists,
         vocab,
         output_dir,
         train_prefix,
@@ -321,8 +376,8 @@ def preprocess_data(
         test_X_sage, te_aspect, te_no_aspect, _, _ = process_subset(
             test_items,
             test_parsed,
+            test_labels,
             label_fields,
-            label_lists,
             vocab,
             output_dir,
             test_prefix,
@@ -354,47 +409,26 @@ def preprocess_data(
 
 
 def process_subset(
-    items, parsed, label_fields, label_lists, vocab, output_dir, output_prefix
+    items, ids, parsed, labels, label_fields, vocab, output_dir, output_prefix
 ):
     n_items = len(items)
     vocab_size = len(vocab)
     vocab_index = dict(zip(vocab, range(vocab_size)))
 
-    ids = []
-    for i, item in enumerate(items):
-        if "id" in item:
-            ids.append(item["id"])
-    if len(ids) != n_items:
+    if not ids or len(ids) != n_items:
         ids = [str(i) for i in range(n_items)]
 
     # create a label index using string representations
-    for label_field in label_fields:
-        label_list = label_lists[label_field]
-        n_labels = len(label_list)
-        label_list_strings = [str(label) for label in label_list]
-        label_index = dict(zip(label_list_strings, range(n_labels)))
+    if labels:
+        labels_df = pd.DataFrame.from_records(labels, index=ids)
 
-        # convert labels to a data frame
-        if n_labels > 0:
-            label_matrix = np.zeros([n_items, n_labels], dtype=int)
-            label_vector = np.zeros(n_items, dtype=int)
-
-            for i, item in enumerate(items):
-                label = item[label_field]
-                label_matrix[i, label_index[str(label)]] = 1
-                label_vector[i] = label_index[str(label)]
-
-            labels_df = pd.DataFrame(
-                label_matrix, index=ids, columns=label_list_strings
-            )
-            labels_df.to_csv(
+        for label_field in label_fields:
+            labels_df_subset = pd.get_dummies(labels_df[label_field])
+            labels_df_subset.to_csv(
                 os.path.join(output_dir, output_prefix + "." + label_field + ".csv")
             )
-            label_vector_df = pd.DataFrame(
-                label_vector, index=ids, columns=[label_field]
-            )
-            if n_labels == 2:
-                label_vector_df.to_csv(
+            if labels_df[label_field].nunique() == 2:
+                labels_df_subset.iloc[0, :].to_csv(
                     os.path.join(
                         output_dir, output_prefix + "." + label_field + "_vector.csv"
                     )
@@ -494,6 +528,7 @@ def tokenize(
     keep_alphanum=False,
     min_length=3,
     stopwords=None,
+    ngram_range=(1, 1),
     vocab=None,
 ):
     text = clean_text(text, strip_html, lower, keep_emails, keep_at_mentions)
@@ -523,7 +558,13 @@ def tokenize(
         tokens = [token for token in unigrams if token in vocab]
     else:
         tokens = unigrams
-
+    
+    tokens = [
+        '_'.join(tokens[j:j+i])
+        for i in range(min(ngram_range), max(ngram_range) + 1)
+        for j in range(len(tokens) - i + 1)
+    ]
+    
     return tokens, counts
 
 
