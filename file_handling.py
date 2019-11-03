@@ -50,12 +50,12 @@ class LazyJsonlistReader:
         """
         Read length of dataset and cache
         """
-        if self._length is None:
+        if self._len is None:
             with open(self._fpath) as f:
                 for i, l in enumerate(f):
                     pass
-            self._length = i + 1
-        return self._length
+            self._len = i + 1
+        return self._len
 
 
 
