@@ -694,7 +694,7 @@ def train(
     training_epochs=100,
     patience=10,
     dev_metric="-perplexity",
-    display_step=10,
+    display_step=1,
     X_dev=None,
     Y_dev=None,
     PC_dev=None,
