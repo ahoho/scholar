@@ -850,7 +850,7 @@ def create_minibatch(X, Y, PC, TC, batch_size=200, rng=None):
             ixs = np.random.randint(X.shape[0], size=batch_size)
 
         X_mb = X[ixs, :].astype("float32")
-        X_mb = X.todense()
+        X_mb = X_mb.todense()
         if Y is not None:
             Y_mb = Y[ixs, :].astype("float32")
         else:
