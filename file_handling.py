@@ -83,17 +83,14 @@ def read_text(input_filename):
 
 
 def write_list_to_text(lines, output_filename, add_newlines=True, add_final_newline=False):
-    if add_newlines:
-        lines = '\n'.join(lines)
+    with open(output_filename, 'w', encoding='utf-8') as output_file:
+        for i, line in enumerate(lines):
+            output_file.write(line)
+            if add_newlines and i < len(lines) - 1:
+                output_file.write('\n')
+        
         if add_final_newline:
-            lines += '\n'
-    else:
-        lines = ''.join(lines)
-        if add_final_newline:
-            lines[-1] += '\n'
-
-    with codecs.open(output_filename, 'w', encoding='utf-8') as output_file:
-        output_file.writelines(lines)
+            output_file.write('\n')
 
 
 def save_sparse(sparse_matrix, output_filename):

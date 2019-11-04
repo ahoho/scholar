@@ -40,38 +40,29 @@ alphanum = re.compile("^[a-zA-Z0-9_]+$")
 
 def main(args):
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        'train_infile', type=str,
-        help='input file'
-    )
-    parser.add_argument(
-        'output_dir', type=str,
-        help='output directory'
-    )
+    parser.add_argument("train_infile", type=str, help="input file")
+    parser.add_argument("output_dir", type=str, help="output directory")
 
     label_parser = parser.add_mutually_exclusive_group()
     label_parser.add_argument(
         "--label",
         dest="label",
-        default=None,   
+        default=None,
         help="field(s) to use as label (comma-separated)",
     )
     label_parser.add_argument(
         # c.f. https://stackoverflow.com/a/18609361/5712749
-        '--label_dicts',
+        "--label_dicts",
         dest="label_dicts",
         type=json.loads,
         default=None,
         help="""
         field(s) to use as label along with their values, format as json dict, e.g.,
         "{'label_1': ['class_1_a', 'class_1_b'], 'label_2': ['class_2_a', 'class_2_b']}"
-        """
+        """,
     )
     parser.add_argument(
-        "--test",
-        dest="test",
-        default=None,
-        help="Test data (test.jsonlist)",
+        "--test", dest="test", default=None, help="Test data (test.jsonlist)",
     )
     parser.add_argument(
         "--train-prefix",
@@ -132,29 +123,20 @@ def main(args):
         help="Do not lowercase text",
     )
     parser.add_argument(
-        "--min-length",
-        dest="min_length",
-        default=3,
-        help="Minimum token length",
+        "--min-length", dest="min_length", default=3, help="Minimum token length",
     )
     parser.add_argument(
-        "--ngram_min",
-        dest="ngram_min",
-        default=1,
-        help="n-grams lower bound",
+        "--ngram_min", dest="ngram_min", default=1, help="n-grams lower bound",
     )
     parser.add_argument(
-        "--ngram_max",
-        dest="ngram_max",
-        default=1,
-        help="n-grams upper bound",
+        "--ngram_max", dest="ngram_max", default=1, help="n-grams upper bound",
     )
     parser.add_argument(
         "--vocab-size",
         dest="vocab_size",
         default=None,
         help="Size of the vocabulary (by most common, following above exclusions)",
-    )    
+    )
     parser.add_argument(
         "--seed",
         dest="seed",
@@ -173,7 +155,7 @@ def main(args):
     label_fields = options.label or options.label_dicts
     min_doc_count = int(options.min_doc_count)
     ngram_range = int(options.ngram_min), int(options.ngram_max)
-    min_doc_count = int(options.min_doc_count)    
+    min_doc_count = int(options.min_doc_count)
     max_doc_freq = float(options.max_doc_freq)
     vocab_size = options.vocab_size
     stopwords = options.stopwords
@@ -226,10 +208,11 @@ def preprocess_data(
     keep_alphanum=False,
     strip_html=False,
     lower=True,
-    min_length=3,
+    min_word_length=3,
+    max_doc_length=5000,
     label_fields=None,
-    workers=3,
-    proc_multiplier=100,
+    workers=16,
+    proc_multiplier=500,
 ):
 
     if stopwords == "mallet":
@@ -263,7 +246,7 @@ def preprocess_data(
         n_test = 0
 
     n_items = n_train + n_test
-    
+
     if label_fields:
         label_lists = {}
         if "," in label_fields:
@@ -271,7 +254,7 @@ def preprocess_data(
         else:
             label_fields = [label_fields]
     if label_fields is None:
-            label_fields = []
+        label_fields = []
 
     # make vocabulary
     train_ids, train_parsed, train_labels = [], [], []
@@ -288,52 +271,61 @@ def preprocess_data(
     chunksize = proc_multiplier * workers
 
     kwargs = {
-        'strip_html': strip_html,
-        'lower': lower,
-        'keep_numbers': keep_num,
-        'keep_alphanum': keep_alphanum,
-        'min_length': min_length,
-        'stopwords': stopword_set,
-        'ngram_range': ngram_range,
-        'vocab': vocab,
-        'label_fields': label_fields,
+        "strip_html": strip_html,
+        "lower": lower,
+        "keep_numbers": keep_num,
+        "keep_alphanum": keep_alphanum,
+        "min_length": min_word_length,
+        "stopwords": stopword_set,
+        "ngram_range": ngram_range,
+        "vocab": vocab,
+        "label_fields": label_fields,
     }
-    import pdb
-    pdb.set_trace()
 
-    for i, group in enumerate(chunkize(train_items, chunksize=chunksize)):
-        print(f'On training chunk {i} of {len(train_items) // chunksize}')
+    # these two loops below do the majority of the preprocessing. unfortunately, without
+    # a major refactor, they cannot be turned into generators and the results of
+    # tokenization must be appended to a list. this unfortunately implies a large
+    # memory footprint
+    for i, group in enumerate(chunkize(iter(train_items), chunksize=chunksize)):
+        print(f"On training chunk {i} of {len(train_items) // chunksize}", end="\r")
         for ids, tokens, labels in pool.imap(partial(_process_item, **kwargs), group):
             # store the parsed documents
             if ids is not None:
                 train_ids.append(ids)
             if labels is not None:
                 train_labels.append(labels)
-            train_parsed.append(tokens)
-            
+            tokens = tokens[:max_doc_length]
+
             # keep track of the number of documents with each word
             word_counts.update(tokens)
             doc_counts.update(set(tokens))
-    
-    for i, group in enumerate(chunkize(test_items, chunksize=chunksize)):
-        print(f'On testing chunk {i} of {len(test_items) // chunksize}')
+            train_parsed.append(" ".join(tokens))  # more efficient storage
+
+    print("Train set processing complete")
+
+    for i, group in enumerate(chunkize(iter(test_items), chunksize=chunksize)):
+        print(f"On testing chunk {i} of {len(test_items) // chunksize}", end="\r")
         for ids, tokens, labels in pool.imap(partial(_process_item, **kwargs), group):
             # store the parsed documents
             if ids is not None:
                 test_ids.append(ids)
             if labels is not None:
                 test_labels.append(labels)
-            test_parsed.append(tokens)
+            tokens = tokens[:max_doc_length]
 
             # keep track of the number of documents with each word
             word_counts.update(tokens)
             doc_counts.update(set(tokens))
-    
+            test_parsed.append(" ".join(tokens))  # more efficient storage
+
+    print("Test set processing complete")
     pool.terminate()
 
     print("Size of full vocabulary=%d" % len(word_counts))
 
-    labels_df = pd.DataFrame.from_records(train_labels + test_labels)
+    # store possible label values
+    if label_fields:
+        labels_df = pd.DataFrame.from_records(train_labels + test_labels)
     for label_name in label_fields:
         label_list = sorted(labels_df[label_name].unique().tolist())
         n_labels = len(label_list)
@@ -369,15 +361,19 @@ def preprocess_data(
 
     fh.write_to_json(vocab, os.path.join(output_dir, train_prefix + ".vocab.json"))
 
+    count_dtype = np.uint16 if max_doc_length < np.iinfo(np.uint16).max else np.int
+
     train_X_sage, tr_aspect, tr_no_aspect, tr_widx, vocab_for_sage = process_subset(
         train_items,
         train_ids,
         train_parsed,
         train_labels,
         label_fields,
+        label_lists,
         vocab,
         output_dir,
         train_prefix,
+        count_dtype=count_dtype,
     )
     if n_test > 0:
         test_X_sage, te_aspect, te_no_aspect, _, _ = process_subset(
@@ -386,9 +382,11 @@ def preprocess_data(
             test_parsed,
             test_labels,
             label_fields,
+            label_lists,
             vocab,
             output_dir,
             test_prefix,
+            count_dtype=count_dtype,
         )
 
     train_sum = np.array(train_X_sage.sum(axis=0))
@@ -418,17 +416,30 @@ def preprocess_data(
 
 # to pass to pool.imap
 def _process_item(item, **kwargs):
-    text = item['text']
-    label_fields = kwargs.pop('label_fields', None)
+    text = item["text"]
+    label_fields = kwargs.pop("label_fields", None)
     labels = None
     if label_fields:
-        labels = {label_field: item[label_field] for label_field in label_fields}
-        
-    tokens, _ = tokenize(text, **kwargs)
-    return item.get('id', None), tokens, labels
+        # TODO: probably don't want blind str conversion here
+        labels = {label_field: str(item[label_field]) for label_field in label_fields}
+    if text:
+        tokens, _ = tokenize(text, **kwargs)
+    else:
+        tokens = []
+    return item.get("id", None), tokens, labels
+
 
 def process_subset(
-    items, ids, parsed, labels, label_fields, vocab, output_dir, output_prefix
+    items,
+    ids,
+    parsed,
+    labels,
+    label_fields,
+    label_lists,
+    vocab,
+    output_dir,
+    output_prefix,
+    count_dtype=np.int,
 ):
     n_items = len(items)
     vocab_size = len(vocab)
@@ -443,21 +454,29 @@ def process_subset(
 
         for label_field in label_fields:
             labels_df_subset = pd.get_dummies(labels_df[label_field])
+
+            # for any classes not present in the subset, add 0 columns
+            # (handles case where classes appear in only one of train or test)
+            for category in label_lists[label_field]:
+                if category not in labels_df_subset:
+                    labels_df_subset[category] = 0
+
             labels_df_subset.to_csv(
                 os.path.join(output_dir, output_prefix + "." + label_field + ".csv")
             )
             if labels_df[label_field].nunique() == 2:
-                labels_df_subset.iloc[:, 1].to_csv( # should align with 
+                labels_df_subset.iloc[:, 1].to_csv(
                     os.path.join(
                         output_dir, output_prefix + "." + label_field + "_vector.csv"
                     ),
-                    header=[label_field]
+                    header=[label_field],
                 )
             # used later
-            label_index = dict(zip(labels_df_subset.columns, range(len(labels_df_subset))))
-
-    X = np.zeros([n_items, vocab_size], dtype=int)
-
+            label_index = dict(
+                zip(labels_df_subset.columns, range(len(labels_df_subset)))
+            )
+    X = np.zeros([n_items, vocab_size], dtype=count_dtype)
+    
     dat_strings = []
     dat_labels = []
     mallet_strings = []
@@ -469,6 +488,8 @@ def process_subset(
     print("Converting to count representations")
     for i, words in enumerate(parsed):
         # get the vocab indices of words that are in the vocabulary
+        words = words.split()
+
         indices = [vocab_index[word] for word in words if word in vocab_index]
         word_subset = [word for word in words if word in vocab_index]
 
@@ -494,8 +515,7 @@ def process_subset(
             if len(label_fields) > 0:
                 label = labels[i][label_fields[-1]]
                 dat_labels.append(str(label_index[str(label)]))
-
-            values = list(counter.values())
+            values = np.array(list(counter.values()), dtype=count_dtype)
             X[
                 np.ones(len(counter.keys()), dtype=int) * i, list(counter.keys())
             ] += values
@@ -531,7 +551,9 @@ def process_subset(
     # for SAGE, assume only a single label has been given
     if len(label_fields) > 0:
         # convert array to vector of labels for SAGE
-        sage_aspect = np.argmax(np.array(labels_df_subset.values, dtype=float), axis=1) + 1
+        sage_aspect = (
+            np.argmax(np.array(labels_df_subset.values, dtype=float), axis=1) + 1
+        )
     else:
         sage_aspect = np.ones([n_items, 1], dtype=float)
     sage_no_aspect = np.array([n_items, 1], dtype=float)
@@ -580,13 +602,13 @@ def tokenize(
         tokens = [token for token in unigrams if token in vocab]
     else:
         tokens = unigrams
-    
+
     tokens = [
-        '_'.join(tokens[j:j+i])
+        "_".join(tokens[j : j + i])
         for i in range(min(ngram_range), max(ngram_range) + 1)
         for j in range(len(tokens) - i + 1)
     ]
-    
+
     return tokens, counts
 
 
