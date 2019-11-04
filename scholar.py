@@ -36,6 +36,9 @@ class Scholar(object):
         :param adam_beta2: second hyperparameter for Adam
         :param device: (int) the number of the GPU to use
         """
+        self._call = locals()
+        self._call.pop('self')
+        self._call.pop('init_embeddings')
 
         if seed is not None:
             torch.manual_seed(seed)

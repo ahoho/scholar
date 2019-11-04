@@ -3,6 +3,8 @@ import sys
 from optparse import OptionParser
 
 import gensim
+import git
+import torch
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -44,6 +46,19 @@ def main(args):
     )
     parser.add_option(
         "--epochs", type=int, default=200, help="Number of epochs: default=%default"
+    )
+    parser.add_option(
+        "--patience",
+        type=int,
+        default=10,
+        help="Number of epochs to wait without improvement to dev-metric",
+    )
+    parser.add_option(
+        "--dev-metric",
+        dest="dev_metric",
+        type=str,
+        default="-perplexity",  # TODO: constrain options
+        help="Optimize accuracy or perplexity (must prefix with + or - to indicate direction)",
     )
     parser.add_option(
         "--train-prefix",
@@ -310,17 +325,26 @@ def main(args):
         classify_from_covars=options.covars_predict,
     )
 
+    # make output directory
+    fh.makedirs(options.output_dir)
+
     # train the model
     print("Optimizing full model")
-    model = train(
-        model,
-        network_architecture,
-        train_X,
-        train_labels,
-        train_prior_covars,
-        train_topic_covars,
+    train(
+        model=model,
+        network_architecture=network_architecture,
+        options=options,
+        X=train_X,
+        Y=train_labels,
+        PC=train_prior_covars,
+        TC=train_topic_covars,
+        vocab=vocab,
+        prior_covar_names=prior_covar_names,
+        topic_covar_names=topic_covar_names,
         training_epochs=options.epochs,
         batch_size=options.batch_size,
+        patience=options.patience,
+        dev_metric=options.dev_metric,
         rng=rng,
         X_dev=dev_X,
         Y_dev=dev_labels,
@@ -328,11 +352,13 @@ def main(args):
         TC_dev=dev_topic_covars,
     )
 
-    # make output directory
-    fh.makedirs(options.output_dir)
+    # laod best model
+    model, _ = load_scholar_model(
+        os.path.join(options.output_dir, "torch_model.pt"), embeddings,
+    )
 
     # display and save weights
-    print_and_save_weights(options, model, vocab, prior_covar_names, topic_covar_names)
+    # print_and_save_weights(options, model, vocab, prior_covar_names, topic_covar_names)
 
     # Evaluate perplexity on dev and test data
     if dev_X is not None:
@@ -656,12 +682,18 @@ def make_network(
 def train(
     model,
     network_architecture,
+    options,
     X,
     Y,
     PC,
     TC,
+    vocab,
+    prior_covar_names,
+    topic_covar_names,
     batch_size=200,
     training_epochs=100,
+    patience=10,
+    dev_metric="-perplexity",
     display_step=10,
     X_dev=None,
     Y_dev=None,
@@ -677,6 +709,12 @@ def train(
     mb_gen = create_minibatch(X, Y, PC, TC, batch_size=batch_size, rng=rng)
     total_batch = int(n_train / batch_size)
     batches = 0
+
+    dev_sign, dev_metric = dev_metric[:1], dev_metric[1:]
+    sgn = -1 if dev_sign == "-" else 1
+    best_dev_metrics = {"perplexity": -sgn * np.inf, "accuracy": -sgn * np.inf}
+    num_epochs_no_improvement = 0
+
     eta_bn_prop = init_eta_bn_prop  # interpolation between batch norm and no batch norm in final layer of recon
 
     model.train()
@@ -787,6 +825,7 @@ def train(
 
         # Display logs per epoch step
         if epoch % display_step == 0 and epoch > 0:
+            epoch_metrics = {}
             if network_architecture["n_labels"] > 0:
                 print(
                     "Epoch:",
@@ -812,6 +851,8 @@ def train(
                     eta_bn_prop=eta_bn_prop,
                 )
                 n_dev, _ = X_dev.shape
+                epoch_metrics["perplexity"] = dev_perplexity
+
                 if network_architecture["n_labels"] > 0:
                     dev_pred_probs = predict_label_probs(
                         model, X_dev, PC_dev, TC_dev, eta_bn_prop=eta_bn_prop
@@ -820,12 +861,28 @@ def train(
                     dev_accuracy = float(
                         np.sum(dev_predictions == np.argmax(Y_dev, axis=1))
                     ) / float(n_dev)
+                    epoch_metrics["accuracy"] = dev_accuracy
+
                     print(
                         "Epoch: %d; Dev perplexity = %0.4f; Dev accuracy = %0.4f"
                         % (epoch, dev_perplexity, dev_accuracy)
                     )
                 else:
                     print("Epoch: %d; Dev perplexity = %0.4f" % (epoch, dev_perplexity))
+
+                if sgn * epoch_metrics[dev_metric] > sgn * best_dev_metrics[dev_metric]:
+                    best_dev_metrics[dev_metric] = epoch_metrics[dev_metric]
+                    num_epochs_no_improvement = 0
+
+                    print_and_save_weights(
+                        options, model, vocab, prior_covar_names, topic_covar_names
+                    )
+                    save_scholar_model(options, model, epoch, best_dev_metrics)
+                else:
+                    num_epochs_no_improvement += 1
+                if patience is not None and num_epochs_no_improvement >= patience:
+                    print(f"Ran out of patience ({patience} epochs), returning model")
+                    return model
                 # switch back to training mode
                 model.train()
 
@@ -896,7 +953,7 @@ def get_minibatch(X, Y, PC, TC, batch, batch_size=200):
         TC_mb = TC[ixs, :].astype("float32")
     else:
         TC_mb = None
-    
+
     return X_mb, Y_mb, PC_mb, TC_mb
 
 
@@ -1071,7 +1128,7 @@ def evaluate_perplexity(model, X, Y, PC, TC, batch_size, eta_bn_prop=0.0):
     if TC is not None:
         TC = TC.astype("float32")
     losses = []
-    
+
     n_items, _ = X.shape
     n_batches = int(np.ceil(n_items / batch_size))
     for i in range(n_batches):
@@ -1185,6 +1242,51 @@ def save_document_representations(
     np.savez(
         os.path.join(output_dir, "theta." + partition + ".npz"), theta=theta, ids=ids
     )
+
+
+def save_scholar_model(options, model, epoch=0, dev_metrics={}):
+    """
+    Save the Scholar model
+    """
+
+    # get git info
+    try:
+        repo = git.Repo(search_parent_directories=True)
+        sha = repo.head.object.hexsha
+    except git.exc.InvalidGitRepositoryError:
+        sha = None
+
+    torch.save(
+        {
+            # Scholar arguments
+            "scholar_kwargs": model._call,
+            # Embeddings path
+            "options": options,
+            # Torch weights
+            "model_state_dict": model._model.state_dict(),
+            "optimizer_state_dict": model.optimizer.state_dict(),
+            # Training state
+            "epoch": epoch,
+            "dev_metrics": dev_metrics,
+            "git_hash": sha,
+        },
+        os.path.join(options.output_dir, "torch_model.pt"),
+    )
+
+
+def load_scholar_model(inpath, embeddings=None):
+    """
+    Load the Scholar model
+    """
+    checkpoint = torch.load(inpath)
+    scholar_kwargs = checkpoint["scholar_kwargs"]
+    scholar_kwargs["init_embeddings"] = embeddings
+
+    model = Scholar(**scholar_kwargs)
+    model._model.load_state_dict(checkpoint["model_state_dict"])
+    model.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+    return model, checkpoint
 
 
 if __name__ == "__main__":
