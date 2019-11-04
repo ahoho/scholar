@@ -5,6 +5,7 @@ from optparse import OptionParser
 import gensim
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 import file_handling as fh
 from scholar import Scholar
@@ -724,7 +725,7 @@ def train(
         avg_nl = 0.0
         avg_kld = 0.0
         # Loop over all batches
-        for i in range(total_batch):
+        for i in tqdm(range(total_batch)):
             # get a minibatch
             batch_xs, batch_ys, batch_pcs, batch_tcs = next(mb_gen)
             # do one minibatch update
@@ -835,7 +836,7 @@ def train(
                 if eta_bn_prop < 0:
                     eta_bn_prop = 0.0
 
-    # finish training
+    # finish tr
     model.eval()
     return model
 
