@@ -103,6 +103,8 @@ ENV/
 # data
 data
 output
+tutorial
+congress_votes
 
 # IntelliJ
 *.iml
