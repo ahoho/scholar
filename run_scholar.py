@@ -1062,7 +1062,7 @@ def print_top_bg(bg, feature_names, n_top_words=10):
 
 def evaluate_perplexity(model, X, Y, PC, TC, batch_size, eta_bn_prop=0.0):
     # Evaluate the approximate perplexity on a subset of the data (using words, labels, and covariates)
-    doc_sums = np.array(X.sum(axis=1), dtype=float)
+    doc_sums = np.array(X.sum(axis=1), dtype=np.float32)
     X = X.astype("float32")
     if Y is not None:
         Y = Y.astype("float32")
