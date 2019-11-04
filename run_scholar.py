@@ -449,8 +449,8 @@ def main(args):
 def load_word_counts(input_dir, input_prefix, vocab=None):
     print("Loading data")
     # laod the word counts and convert to a dense matrix
-    temp = fh.load_sparse(os.path.join(input_dir, input_prefix + ".npz")).todense()
-    X = np.array(temp, dtype="float32")
+    X = fh.load_sparse(os.path.join(input_dir, input_prefix + ".npz"))
+    X = X.astype(np.float32)
     # load the vocabulary
     if vocab is None:
         vocab = fh.read_json(os.path.join(input_dir, input_prefix + ".vocab.json"))
@@ -461,7 +461,7 @@ def load_word_counts(input_dir, input_prefix, vocab=None):
     ids = fh.read_json(os.path.join(input_dir, input_prefix + ".ids.json"))
 
     # filter out empty documents and return a boolean selector for filtering labels and covariates
-    row_selector = np.array(X.sum(axis=1) > 0, dtype=bool)
+    row_selector = np.array(X.sum(axis=1) > 0, dtype=bool).reshape(-1)
     print("Found %d non-empty documents" % np.sum(row_selector))
     X = X[row_selector, :]
     ids = [doc_id for i, doc_id in enumerate(ids) if row_selector[i]]
@@ -596,7 +596,7 @@ def get_init_bg(data):
         % (int(np.min(sums)), int(np.max(sums)))
     )
     bg = np.array(np.log(sums) - np.log(float(np.sum(sums))), dtype=np.float32)
-    return bg
+    return bg.reshape(-1)
 
 
 def load_word_vectors(options, rng, vocab):
@@ -850,6 +850,7 @@ def create_minibatch(X, Y, PC, TC, batch_size=200, rng=None):
             ixs = np.random.randint(X.shape[0], size=batch_size)
 
         X_mb = X[ixs, :].astype("float32")
+        X_mb = X.todense()
         if Y is not None:
             Y_mb = Y[ixs, :].astype("float32")
         else:
@@ -878,6 +879,8 @@ def get_minibatch(X, Y, PC, TC, batch, batch_size=200):
         ixs = np.arange(batch * batch_size, n_items)
 
     X_mb = X[ixs, :].astype("float32")
+    X_mb = X_mb.todense()
+
     if Y is not None:
         Y_mb = Y[ixs, :].astype("float32")
     else:
@@ -892,7 +895,7 @@ def get_minibatch(X, Y, PC, TC, batch, batch_size=200):
         TC_mb = TC[ixs, :].astype("float32")
     else:
         TC_mb = None
-
+    
     return X_mb, Y_mb, PC_mb, TC_mb
 
 

@@ -219,7 +219,7 @@ class Scholar(object):
                 )
                 loss, NL, KLD = temp
                 losses += loss.to("cpu").detach().numpy()
-            losses /= float(n_samples)
+            losses /= np.float32(n_samples)
 
         return losses
 
