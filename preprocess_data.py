@@ -138,6 +138,9 @@ def main(args):
         help="Size of the vocabulary (by most common, following above exclusions)",
     )
     parser.add_argument(
+        "--workers", default=1, type=int, help="Processes to use when processing",
+    )
+    parser.add_argument(
         "--seed",
         dest="seed",
         default=42,
@@ -157,6 +160,8 @@ def main(args):
     ngram_range = int(options.ngram_min), int(options.ngram_max)
     min_doc_count = int(options.min_doc_count)
     max_doc_freq = float(options.max_doc_freq)
+    workers = options.workers
+
     vocab_size = options.vocab_size
     stopwords = options.stopwords
     if stopwords == "None":
@@ -190,6 +195,7 @@ def main(args):
         lower,
         min_length,
         label_fields=label_fields,
+        workers=workers,
     )
 
 
