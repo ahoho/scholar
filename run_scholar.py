@@ -358,7 +358,7 @@ def main(args):
     )
 
     # display and save weights
-    # print_and_save_weights(options, model, vocab, prior_covar_names, topic_covar_names)
+    print_and_save_weights(options, model, vocab, prior_covar_names, topic_covar_names)
 
     # Evaluate perplexity on dev and test data
     if dev_X is not None:
@@ -874,9 +874,9 @@ def train(
                     best_dev_metrics[dev_metric] = epoch_metrics[dev_metric]
                     num_epochs_no_improvement = 0
 
-                    print_and_save_weights(
-                        options, model, vocab, prior_covar_names, topic_covar_names
-                    )
+                    #print_and_save_weights(
+                    #    options, model, vocab, prior_covar_names, topic_covar_names
+                    #)
                     save_scholar_model(options, model, epoch, best_dev_metrics)
                 else:
                     num_epochs_no_improvement += 1
