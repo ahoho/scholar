@@ -99,7 +99,7 @@ def main(args):
     parser.add_option(
         "--covars-predict",
         action="store_true",
-        default=False,
+        default=True,
         help="Use covariates as input to classifier: default=%default",
     )
     parser.add_option(
