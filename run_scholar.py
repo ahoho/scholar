@@ -152,6 +152,13 @@ def main(args):
         help="Output directory: default=%default",
     )
     parser.add_option(
+        "--restart",
+        action="store_true",
+        default=False,
+        help="Restart training with model in output-dir",
+    )
+    
+    parser.add_option(
         "--emb-dim",
         type=int,
         default=300,
@@ -312,18 +319,24 @@ def main(args):
     embeddings, update_embeddings = load_word_vectors(options, rng, vocab)
 
     # create the model
-    model = Scholar(
-        network_architecture,
-        alpha=options.alpha,
-        learning_rate=options.learning_rate,
-        init_embeddings=embeddings,
-        update_embeddings=update_embeddings,
-        init_bg=init_bg,
-        adam_beta1=options.momentum,
-        device=options.device,
-        seed=seed,
-        classify_from_covars=options.covars_predict,
-    )
+    if options.restart:
+        print(f"Loading existing model from '{options.output_dir}'")
+        model, _ = load_scholar_model(
+            os.path.join(options.output_dir, "torch_model.pt"), embeddings=embeddings
+        )
+    else:
+        model = Scholar(
+            network_architecture,
+            alpha=options.alpha,
+            learning_rate=options.learning_rate,
+            init_embeddings=embeddings,
+            update_embeddings=update_embeddings,
+            init_bg=init_bg,
+            adam_beta1=options.momentum,
+            device=options.device,
+            seed=seed,
+            classify_from_covars=options.covars_predict,
+        )
 
     # make output directory
     fh.makedirs(options.output_dir)
