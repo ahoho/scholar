@@ -217,7 +217,7 @@ def preprocess_data(
     min_word_length=3,
     max_doc_length=5000,
     label_fields=None,
-    workers=16,
+    workers=4,
     proc_multiplier=500,
 ):
 
