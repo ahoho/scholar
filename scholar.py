@@ -21,6 +21,7 @@ class Scholar(object):
         device=None,
         seed=None,
         classify_from_covars=True,
+        classify_from_topics=True,
     ):
 
         """
@@ -77,6 +78,7 @@ class Scholar(object):
             bg_init=init_bg,
             device=self.device,
             classify_from_covars=classify_from_covars,
+            classify_from_topics=classify_from_topics,
         ).to(self.device)
 
         # set the criterion
@@ -321,7 +323,8 @@ class torchScholar(nn.Module):
         init_emb=None,
         bg_init=None,
         device="cpu",
-        classify_from_covars=False,
+        classify_from_covars=True,
+        classify_from_topics=True,
     ):
         super(torchScholar, self).__init__()
 
@@ -340,6 +343,7 @@ class torchScholar(nn.Module):
         self.l2_prior_reg = config["l2_prior_reg"]
         self.device = device
         self.classify_from_covars = classify_from_covars
+        self.classify_from_topics = classify_from_topics
 
         # create a layer for prior covariates to influence the document prior
         if self.n_prior_covars > 0:
@@ -354,7 +358,9 @@ class torchScholar(nn.Module):
             self.vocab_size, self.words_emb_dim, bias=False
         )
         emb_size = self.words_emb_dim
-        classifier_input_dim = self.n_topics
+        classifier_input_dim = 0
+        if self.classify_from_topics:
+            classifier_input_dim = self.n_topics
         if self.n_prior_covars > 0:
             emb_size += self.n_prior_covars
             if self.classify_from_covars:
@@ -554,8 +560,10 @@ class torchScholar(nn.Module):
         # predict labels
         Y_recon = None
         if self.n_labels > 0:
-
-            classifier_inputs = [theta]
+            
+            classifier_inputs = []
+            if self.classify_from_topics:
+                classifier_inputs = [theta]
             if self.classify_from_covars:
                 if self.n_prior_covars > 0:
                     classifier_inputs.append(PC)
@@ -690,7 +698,9 @@ class torchScholar(nn.Module):
         Y_recon = None
         if self.n_labels > 0:
 
-            classifier_inputs = [theta]
+            classifier_inputs = []
+            if self.classify_from_topics:
+                classifier_inputs = [theta]
             if self.classify_from_covars:
                 if self.n_prior_covars > 0:
                     classifier_inputs.append(PC)

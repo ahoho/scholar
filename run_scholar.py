@@ -103,10 +103,18 @@ def main(args):
         help="Use interactions between topics and topic covariates: default=%default",
     )
     parser.add_option(
-        "--covars-predict",
-        action="store_true",
+        "--no-covars-predict",
+        action="store_false",
+        dest="covars_predict",
         default=True,
-        help="Use covariates as input to classifier: default=%default",
+        help="Do not use covariates as input to classifier: default=%default",
+    )
+    parser.add_option(
+        "--no-topics-predict",
+        action="store_false",
+        dest="topics_predict",
+        default=True,
+        help="Do not use topics as input to classifier: default=%default",
     )
     parser.add_option(
         "--min-prior-covar-count",
@@ -372,6 +380,7 @@ def main(args):
             device=options.device,
             seed=seed,
             classify_from_covars=options.covars_predict,
+            classify_from_topics=options.topics_predict,
         )
 
     # make output directory
