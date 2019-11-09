@@ -67,6 +67,12 @@ def main(args):
         help="Prefix of train set: default=%default",
     )
     parser.add_option(
+        "--dev-prefix",
+        type=str,
+        default=None,
+        help="Prefix of dev set: default=%default.",
+    )
+    parser.add_option(
         "--test-prefix",
         type=str,
         default=None,
@@ -184,13 +190,16 @@ def main(args):
         help="Do not use background freq: default=%default",
     )
     parser.add_option(
-        "--dev-folds", type=int, default=0, help="Number of dev folds: default=%default"
+        "--dev-folds",
+        type=int,
+        default=0,
+        help="Number of dev folds. Ignored if --dev-prefix is used. default=%default"
     )
     parser.add_option(
         "--dev-fold",
         type=int,
         default=0,
-        help="Fold to use as dev (if dev_folds > 0): default=%default",
+        help="Fold to use as dev (if dev_folds > 0). Ignored if --dev-prefix is used. default=%default",
     )
     parser.add_option(
         "--device", type=int, default=None, help="GPU to use: default=%default"
@@ -207,6 +216,10 @@ def main(args):
         options.l1_topics = 1.0
         options.l1_topic_covars = 1.0
         options.l1_interactions = 1.0
+    
+    if options.dev_prefix:
+        options.dev_folds = 0
+        options.dev_fold = 0
 
     if options.seed is not None:
         rng = np.random.RandomState(options.seed)
@@ -269,6 +282,29 @@ def main(args):
         dev_ids = None
 
     n_train, _ = train_X.shape
+    
+    # load the dev data
+    if options.dev_prefix is not None:
+        dev_X, _, row_selector, dev_ids = load_word_counts(
+            input_dir, options.dev_prefix, vocab=vocab
+        )
+        dev_labels, _, _, _ = load_labels(
+            input_dir, options.dev_prefix, row_selector, options
+        )
+        dev_prior_covars, _, _, _ = load_covariates(
+            input_dir,
+            options.dev_prefix,
+            row_selector,
+            options.prior_covars,
+            covariate_selector=prior_covar_selector,
+        )
+        dev_topic_covars, _, _, _ = load_covariates(
+            input_dir,
+            options.dev_prefix,
+            row_selector,
+            options.topic_covars,
+            covariate_selector=topic_covar_selector,
+        )
 
     # load the test data
     if options.test_prefix is not None:
