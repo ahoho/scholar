@@ -574,7 +574,7 @@ class torchScholar(nn.Module):
             if len(classifier_inputs) > 1:
                 classifier_input = torch.cat(classifier_inputs, dim=1).to(self.device)
             else:
-                classifier_input = theta
+                classifier_input = classifier_inputs[0]
 
             if self.classifier_layers == 0:
                 decoded_y = self.classifier_layer_0(classifier_input)
@@ -710,7 +710,7 @@ class torchScholar(nn.Module):
             if len(classifier_inputs) > 1:
                 classifier_input = torch.cat(classifier_inputs, dim=1).to(self.device)
             else:
-                classifier_input = theta.to(self.device)
+                classifier_input = classifier_inputs[0].to(self.device)
 
             if self.classifier_layers == 0:
                 decoded_y = self.classifier_layer_0(classifier_input)

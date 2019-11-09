@@ -889,7 +889,7 @@ def train(
             l1_beta_ci = 0.5 / weights_sq / float(n_train)
 
         # Display logs per epoch step
-        if epoch % display_step == 0 and epoch > 0:
+        if epoch % display_step == 0 and epoch >= 0:
             epoch_metrics = {}
             if network_architecture["n_labels"] > 0:
                 print(
