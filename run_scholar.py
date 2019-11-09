@@ -129,6 +129,12 @@ def main(args):
         help="Drop topic covariates with less than this many non-zero values in the training dataa: default=%default",
     )
     parser.add_option(
+        "--classifier_loss_weight",
+        type=float,
+        default=1.0,
+        help="Weight to give portion of loss from classification: default=%default",
+    )
+    parser.add_option(
         "-r",
         action="store_true",
         default=False,
@@ -732,6 +738,7 @@ def make_network(
         l1_beta_ci_reg=options.l1_interactions,
         l2_prior_reg=options.l2_prior_covars,
         classifier_layers=1,
+        classifier_loss_weight=options.classifier_loss_weight,
         use_interactions=options.interactions,
     )
     return network_architecture

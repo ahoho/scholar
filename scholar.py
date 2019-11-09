@@ -336,6 +336,7 @@ class torchScholar(nn.Module):
         self.n_prior_covars = config["n_prior_covars"]
         self.n_topic_covars = config["n_topic_covars"]
         self.classifier_layers = config["classifier_layers"]
+        self.classifier_loss_weight = config["classifier_loss_weight"]
         self.use_interactions = config["use_interactions"]
         self.l1_beta_reg = config["l1_beta_reg"]
         self.l1_beta_c_reg = config["l1_beta_c_reg"]
@@ -640,7 +641,7 @@ class torchScholar(nn.Module):
         NL = -(X * (X_recon + 1e-10).log()).sum(1)
         # compute label loss
         if self.n_labels > 0:
-            NL += -(Y * (Y_recon + 1e-10).log()).sum(1)
+            NL += -(Y * (Y_recon + 1e-10).log()).sum(1) * self.classifier_loss_weight
 
         # compute KLD
         prior_var = prior_logvar.exp()
