@@ -67,6 +67,12 @@ def main(args):
         help="Prefix of train set: default=%default",
     )
     parser.add_option(
+        "--dev-prefix",
+        type=str,
+        default=None,
+        help="Prefix of dev set: default=%default.",
+    )
+    parser.add_option(
         "--test-prefix",
         type=str,
         default=None,
@@ -97,10 +103,18 @@ def main(args):
         help="Use interactions between topics and topic covariates: default=%default",
     )
     parser.add_option(
-        "--covars-predict",
-        action="store_true",
+        "--no-covars-predict",
+        action="store_false",
+        dest="covars_predict",
         default=True,
-        help="Use covariates as input to classifier: default=%default",
+        help="Do not use covariates as input to classifier: default=%default",
+    )
+    parser.add_option(
+        "--no-topics-predict",
+        action="store_false",
+        dest="topics_predict",
+        default=True,
+        help="Do not use topics as input to classifier: default=%default",
     )
     parser.add_option(
         "--min-prior-covar-count",
@@ -113,6 +127,12 @@ def main(args):
         type=int,
         default=None,
         help="Drop topic covariates with less than this many non-zero values in the training dataa: default=%default",
+    )
+    parser.add_option(
+        "--classifier_loss_weight",
+        type=float,
+        default=1.0,
+        help="Weight to give portion of loss from classification: default=%default",
     )
     parser.add_option(
         "-r",
@@ -184,13 +204,16 @@ def main(args):
         help="Do not use background freq: default=%default",
     )
     parser.add_option(
-        "--dev-folds", type=int, default=0, help="Number of dev folds: default=%default"
+        "--dev-folds",
+        type=int,
+        default=0,
+        help="Number of dev folds. Ignored if --dev-prefix is used. default=%default"
     )
     parser.add_option(
         "--dev-fold",
         type=int,
         default=0,
-        help="Fold to use as dev (if dev_folds > 0): default=%default",
+        help="Fold to use as dev (if dev_folds > 0). Ignored if --dev-prefix is used. default=%default",
     )
     parser.add_option(
         "--device", type=int, default=None, help="GPU to use: default=%default"
@@ -207,6 +230,10 @@ def main(args):
         options.l1_topics = 1.0
         options.l1_topic_covars = 1.0
         options.l1_interactions = 1.0
+    
+    if options.dev_prefix:
+        options.dev_folds = 0
+        options.dev_fold = 0
 
     if options.seed is not None:
         rng = np.random.RandomState(options.seed)
@@ -269,6 +296,29 @@ def main(args):
         dev_ids = None
 
     n_train, _ = train_X.shape
+    
+    # load the dev data
+    if options.dev_prefix is not None:
+        dev_X, _, row_selector, dev_ids = load_word_counts(
+            input_dir, options.dev_prefix, vocab=vocab
+        )
+        dev_labels, _, _, _ = load_labels(
+            input_dir, options.dev_prefix, row_selector, options
+        )
+        dev_prior_covars, _, _, _ = load_covariates(
+            input_dir,
+            options.dev_prefix,
+            row_selector,
+            options.prior_covars,
+            covariate_selector=prior_covar_selector,
+        )
+        dev_topic_covars, _, _, _ = load_covariates(
+            input_dir,
+            options.dev_prefix,
+            row_selector,
+            options.topic_covars,
+            covariate_selector=topic_covar_selector,
+        )
 
     # load the test data
     if options.test_prefix is not None:
@@ -336,6 +386,7 @@ def main(args):
             device=options.device,
             seed=seed,
             classify_from_covars=options.covars_predict,
+            classify_from_topics=options.topics_predict,
         )
 
     # make output directory
@@ -687,6 +738,7 @@ def make_network(
         l1_beta_ci_reg=options.l1_interactions,
         l2_prior_reg=options.l2_prior_covars,
         classifier_layers=1,
+        classifier_loss_weight=options.classifier_loss_weight,
         use_interactions=options.interactions,
     )
     return network_architecture
@@ -837,7 +889,7 @@ def train(
             l1_beta_ci = 0.5 / weights_sq / float(n_train)
 
         # Display logs per epoch step
-        if epoch % display_step == 0 and epoch > 0:
+        if epoch % display_step == 0 and epoch >= 0:
             epoch_metrics = {}
             if network_architecture["n_labels"] > 0:
                 print(

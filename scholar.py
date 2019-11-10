@@ -21,6 +21,7 @@ class Scholar(object):
         device=None,
         seed=None,
         classify_from_covars=True,
+        classify_from_topics=True,
     ):
 
         """
@@ -77,6 +78,7 @@ class Scholar(object):
             bg_init=init_bg,
             device=self.device,
             classify_from_covars=classify_from_covars,
+            classify_from_topics=classify_from_topics,
         ).to(self.device)
 
         # set the criterion
@@ -321,7 +323,8 @@ class torchScholar(nn.Module):
         init_emb=None,
         bg_init=None,
         device="cpu",
-        classify_from_covars=False,
+        classify_from_covars=True,
+        classify_from_topics=True,
     ):
         super(torchScholar, self).__init__()
 
@@ -333,6 +336,7 @@ class torchScholar(nn.Module):
         self.n_prior_covars = config["n_prior_covars"]
         self.n_topic_covars = config["n_topic_covars"]
         self.classifier_layers = config["classifier_layers"]
+        self.classifier_loss_weight = config["classifier_loss_weight"]
         self.use_interactions = config["use_interactions"]
         self.l1_beta_reg = config["l1_beta_reg"]
         self.l1_beta_c_reg = config["l1_beta_c_reg"]
@@ -340,6 +344,7 @@ class torchScholar(nn.Module):
         self.l2_prior_reg = config["l2_prior_reg"]
         self.device = device
         self.classify_from_covars = classify_from_covars
+        self.classify_from_topics = classify_from_topics
 
         # create a layer for prior covariates to influence the document prior
         if self.n_prior_covars > 0:
@@ -354,7 +359,9 @@ class torchScholar(nn.Module):
             self.vocab_size, self.words_emb_dim, bias=False
         )
         emb_size = self.words_emb_dim
-        classifier_input_dim = self.n_topics
+        classifier_input_dim = 0
+        if self.classify_from_topics:
+            classifier_input_dim = self.n_topics
         if self.n_prior_covars > 0:
             emb_size += self.n_prior_covars
             if self.classify_from_covars:
@@ -554,8 +561,10 @@ class torchScholar(nn.Module):
         # predict labels
         Y_recon = None
         if self.n_labels > 0:
-
-            classifier_inputs = [theta]
+            
+            classifier_inputs = []
+            if self.classify_from_topics:
+                classifier_inputs = [theta]
             if self.classify_from_covars:
                 if self.n_prior_covars > 0:
                     classifier_inputs.append(PC)
@@ -565,7 +574,7 @@ class torchScholar(nn.Module):
             if len(classifier_inputs) > 1:
                 classifier_input = torch.cat(classifier_inputs, dim=1).to(self.device)
             else:
-                classifier_input = theta
+                classifier_input = classifier_inputs[0]
 
             if self.classifier_layers == 0:
                 decoded_y = self.classifier_layer_0(classifier_input)
@@ -632,7 +641,7 @@ class torchScholar(nn.Module):
         NL = -(X * (X_recon + 1e-10).log()).sum(1)
         # compute label loss
         if self.n_labels > 0:
-            NL += -(Y * (Y_recon + 1e-10).log()).sum(1)
+            NL += -(Y * (Y_recon + 1e-10).log()).sum(1) * self.classifier_loss_weight
 
         # compute KLD
         prior_var = prior_logvar.exp()
@@ -690,7 +699,9 @@ class torchScholar(nn.Module):
         Y_recon = None
         if self.n_labels > 0:
 
-            classifier_inputs = [theta]
+            classifier_inputs = []
+            if self.classify_from_topics:
+                classifier_inputs = [theta]
             if self.classify_from_covars:
                 if self.n_prior_covars > 0:
                     classifier_inputs.append(PC)
@@ -699,7 +710,7 @@ class torchScholar(nn.Module):
             if len(classifier_inputs) > 1:
                 classifier_input = torch.cat(classifier_inputs, dim=1).to(self.device)
             else:
-                classifier_input = theta.to(self.device)
+                classifier_input = classifier_inputs[0].to(self.device)
 
             if self.classifier_layers == 0:
                 decoded_y = self.classifier_layer_0(classifier_input)
