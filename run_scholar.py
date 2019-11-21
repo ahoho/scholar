@@ -374,6 +374,8 @@ def main(args):
         model, _ = load_scholar_model(
             os.path.join(options.output_dir, "torch_model.pt"), embeddings=embeddings
         )
+        # fine-tuning hack -- if set to 0, will not train classifier
+        model._model.classifier_loss_weight = options.classifier_loss_weight
     else:
         model = Scholar(
             network_architecture,
