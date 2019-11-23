@@ -102,9 +102,11 @@ ENV/
 
 # data
 data
-output
+output*
 tutorial
 congress_votes
+
+google_secret.json
 
 # IntelliJ
 *.iml
