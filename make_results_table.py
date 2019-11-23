@@ -73,3 +73,30 @@ def get_results_data(basedir='./', pattern='output*', ignore_cols_with_same_vals
 if __name__ == '__main__':
     results_data = get_results_data()
     results_data.to_csv('results.csv', index=False)
+
+    # below code stores as google sheet
+    import gspread_pandas
+
+    GOOGLE_AUTH_KEY_DIRECTORY = "./" # google_secret.json should be in this directory
+    RESULTS_SHEET_NAME = "scholar-experiments"
+    SHARE_WITH_USERS = ["hoyle@umd.edu", "pgoel01@umd.edu"]
+
+    config = gspread_pandas.conf.get_config(GOOGLE_AUTH_KEY_DIRECTORY)
+    client = gspread_pandas.Client(config=config)
+    sheet = gspread_pandas.Spread(
+        spread=RESULTS_SHEET_NAME,
+        client=client,
+        create_spread=True,
+    )
+    sheet.df_to_sheet(results_data, index=False, replace=True, sheet='results')
+    
+    # sharing
+    access_sheet = client.open(RESULTS_SHEET_NAME)
+    authenticated_users = [p["emailAddress"] for p in access_sheet.list_permissions()]
+    for user in SHARE_WITH_USERS:
+        if user not in authenticated_users:
+            access_sheet.share(user, perm_type="user", role="writer")
+
+    print("Access results at:")
+    print(sheet.url)
+
