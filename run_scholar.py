@@ -374,6 +374,9 @@ def main(args):
         model, _ = load_scholar_model(
             os.path.join(options.output_dir, "torch_model.pt"), embeddings=embeddings
         )
+        model.train()
+        # fine-tuning hack -- if set to 0, will not train classifier
+        model._model.classifier_loss_weight = options.classifier_loss_weight
     else:
         model = Scholar(
             network_architecture,
@@ -420,6 +423,7 @@ def main(args):
     model, _ = load_scholar_model(
         os.path.join(options.output_dir, "torch_model.pt"), embeddings,
     )
+    model.eval()
 
     # display and save weights
     print_and_save_weights(options, model, vocab, prior_covar_names, topic_covar_names)
