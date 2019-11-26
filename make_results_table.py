@@ -27,7 +27,10 @@ def get_results_data(basedir='./', pattern='output*', ignore_cols_with_same_vals
     column_names = []
     for run_name, run_dir in tqdm.tqdm(dirs):
         model_path = Path(run_dir, 'torch_model.pt')
-        checkpoint = torch.load(model_path, map_location='cpu')
+        try:
+            checkpoint = torch.load(model_path, map_location='cpu')
+        except FileNotFoundError:
+            continue
         model_time = (
             datetime.fromtimestamp(model_path.stat().st_mtime).strftime('%Y-%m-%d %H:%M')
         )
@@ -77,9 +80,9 @@ if __name__ == '__main__':
     # below code stores as google sheet
     import gspread_pandas
 
-    GOOGLE_AUTH_KEY_DIRECTORY = "./" # google_secret.json should be in this directory
+    GOOGLE_AUTH_KEY_DIRECTORY = "~/scholar-experiments-key/" # google_secret.json should be in this directory
     RESULTS_SHEET_NAME = "scholar-experiments"
-    SHARE_WITH_USERS = ["hoyle@umd.edu", "pgoel01@umd.edu"]
+    SHARE_WITH_USERS = ["hoyle@umd.edu", "pgoel1@cs.umd.edu"]
 
     config = gspread_pandas.conf.get_config(GOOGLE_AUTH_KEY_DIRECTORY)
     client = gspread_pandas.Client(config=config)
