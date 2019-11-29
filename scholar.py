@@ -496,11 +496,14 @@ class torchScholar(nn.Module):
         """
         # TODO: it's definitely more efficient to have this outside the train loop,
         # but this involves changing a LOT of function signatures/calls
-        batch_emb_idx = torch.cat(
-            [torch.ones((TC.shape[0], 1)), TC],
-            axis=1
-        )[:, self.covar_embeddings_indices]
-
+        if TC is not None:
+            batch_emb_idx = torch.cat(
+                [torch.ones((TC.shape[0], 1)), TC],
+                axis=1
+            )[:, self.covar_embeddings_indices]
+        else:
+            batch_emb_idx = torch.ones((X.shape[0], 1))
+        
         # Take mean of embeddings when no covar matches (e.g., independents)
         batch_emb_idx[batch_emb_idx.sum(1) == 0, :] = (1 / batch_emb_idx.shape[1])
 

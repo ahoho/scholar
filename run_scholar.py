@@ -13,8 +13,7 @@ import file_handling as fh
 from scholar import Scholar
 
 
-def main(args):
-    usage = "%prog input_dir"
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("input_directory")
     parser.add_argument(
@@ -390,7 +389,7 @@ def main(args):
 
         try:
             covar_embedding_index = topic_covar_names.index(covar)
-        except ValueError:
+        except (ValueError, AttributeError) as e:
             if covar == 'all':
                 covar_embedding_index = -1
             else:
@@ -1402,5 +1401,5 @@ def load_scholar_model(inpath, embeddings=None):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    main()
 
