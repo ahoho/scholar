@@ -1,6 +1,6 @@
 import os
 import sys
-from optparse import OptionParser
+import argparse
 
 import gensim
 import git
@@ -15,222 +15,237 @@ from scholar import Scholar
 
 def main(args):
     usage = "%prog input_dir"
-    parser = OptionParser(usage=usage)
-    parser.add_option(
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input_directory")
+    parser.add_argument(
         "-k",
         dest="n_topics",
         type=int,
         default=20,
-        help="Size of latent representation (~num topics): default=%default",
+        help="Size of latent representation (~num topics)",
     )
-    parser.add_option(
+    parser.add_argument(
         "-l",
         dest="learning_rate",
         type=float,
         default=0.002,
-        help="Initial learning rate: default=%default",
+        help="Initial learning rate",
     )
-    parser.add_option(
+    parser.add_argument(
         "-m",
         dest="momentum",
         type=float,
         default=0.99,
-        help="beta1 for Adam: default=%default",
+        help="beta1 for Adam",
     )
-    parser.add_option(
+    parser.add_argument(
         "--batch-size",
         dest="batch_size",
         type=int,
         default=200,
-        help="Size of minibatches: default=%default",
+        help="Size of minibatches",
     )
-    parser.add_option(
-        "--epochs", type=int, default=200, help="Number of epochs: default=%default"
+    parser.add_argument(
+        "--epochs", type=int, default=200, help="Number of epochs"
     )
-    parser.add_option(
+    parser.add_argument(
         "--patience",
         type=int,
         default=10,
         help="Number of epochs to wait without improvement to dev-metric",
     )
-    parser.add_option(
+    parser.add_argument(
         "--dev-metric",
         dest="dev_metric",
         type=str,
         default="-perplexity",  # TODO: constrain options
         help="Optimize accuracy or perplexity (must prefix with + or - to indicate direction)",
     )
-    parser.add_option(
+    parser.add_argument(
         "--train-prefix",
         type=str,
         default="train",
-        help="Prefix of train set: default=%default",
+        help="Prefix of train set",
     )
-    parser.add_option(
+    parser.add_argument(
         "--dev-prefix",
         type=str,
         default=None,
-        help="Prefix of dev set: default=%default.",
+        help="Prefix of dev set.",
     )
-    parser.add_option(
+    parser.add_argument(
         "--test-prefix",
         type=str,
         default=None,
-        help="Prefix of test set: default=%default",
+        help="Prefix of test set",
     )
-    parser.add_option(
+    parser.add_argument(
         "--labels",
         type=str,
         default=None,
-        help="Read labels from input_dir/[train|test].labels.csv: default=%default",
+        help="Read labels from input_dir/[train|test].labels.csv",
     )
-    parser.add_option(
+    parser.add_argument(
         "--prior-covars",
         type=str,
         default=None,
-        help="Read prior covariates from files with these names (comma-separated): default=%default",
+        help="Read prior covariates from files with these names (comma-separated)",
     )
-    parser.add_option(
+    parser.add_argument(
         "--topic-covars",
         type=str,
         default=None,
-        help="Read topic covariates from files with these names (comma-separated): default=%default",
+        help="Read topic covariates from files with these names (comma-separated)",
     )
-    parser.add_option(
+    parser.add_argument(
         "--interactions",
         action="store_true",
         default=False,
-        help="Use interactions between topics and topic covariates: default=%default",
+        help="Use interactions between topics and topic covariates",
     )
-    parser.add_option(
+    parser.add_argument(
         "--no-covars-predict",
         action="store_false",
         dest="covars_predict",
         default=True,
-        help="Do not use covariates as input to classifier: default=%default",
+        help="Do not use covariates as input to classifier",
     )
-    parser.add_option(
+    parser.add_argument(
         "--no-topics-predict",
         action="store_false",
         dest="topics_predict",
         default=True,
-        help="Do not use topics as input to classifier: default=%default",
+        help="Do not use topics as input to classifier",
     )
-    parser.add_option(
+    parser.add_argument(
         "--min-prior-covar-count",
         type=int,
         default=None,
-        help="Drop prior covariates with less than this many non-zero values in the training dataa: default=%default",
+        help="Drop prior covariates with less than this many non-zero values in the training dataa",
     )
-    parser.add_option(
+    parser.add_argument(
         "--min-topic-covar-count",
         type=int,
         default=None,
-        help="Drop topic covariates with less than this many non-zero values in the training dataa: default=%default",
+        help="Drop topic covariates with less than this many non-zero values in the training dataa",
     )
-    parser.add_option(
+    parser.add_argument(
         "--classifier_loss_weight",
         type=float,
         default=1.0,
-        help="Weight to give portion of loss from classification: default=%default",
+        help="Weight to give portion of loss from classification",
     )
-    parser.add_option(
+    parser.add_argument(
         "-r",
         action="store_true",
         default=False,
-        help="Use default regularization: default=%default",
+        help="Use default regularization",
     )
-    parser.add_option(
+    parser.add_argument(
         "--l1-topics",
         type=float,
         default=0.0,
-        help="Regularization strength on topic weights: default=%default",
+        help="Regularization strength on topic weights",
     )
-    parser.add_option(
+    parser.add_argument(
         "--l1-topic-covars",
         type=float,
         default=0.0,
-        help="Regularization strength on topic covariate weights: default=%default",
+        help="Regularization strength on topic covariate weights",
     )
-    parser.add_option(
+    parser.add_argument(
         "--l1-interactions",
         type=float,
         default=0.0,
-        help="Regularization strength on topic covariate interaction weights: default=%default",
+        help="Regularization strength on topic covariate interaction weights",
     )
-    parser.add_option(
+    parser.add_argument(
         "--l2-prior-covars",
         type=float,
         default=0.0,
-        help="Regularization strength on prior covariate weights: default=%default",
+        help="Regularization strength on prior covariate weights",
     )
-    parser.add_option(
+    parser.add_argument(
         "-o",
         dest="output_dir",
         type=str,
         default="output",
-        help="Output directory: default=%default",
+        help="Output directory",
     )
-    parser.add_option(
+    parser.add_argument(
         "--restart",
         action="store_true",
         default=False,
         help="Restart training with model in output-dir",
     )
     
-    parser.add_option(
+    parser.add_argument(
         "--emb-dim",
         type=int,
         default=300,
-        help="Dimension of input embeddings: default=%default",
+        help="Dimension of input embeddings",
     )
-    parser.add_option(
+    parser.add_argument(
         "--w2v",
         dest="word2vec_file",
         type=str,
         default=None,
-        help="Use this word2vec .bin file to initialize and fix embeddings: default=%default",
+        help="Use this word2vec .bin file to initialize and fix embeddings",
     )
-    parser.add_option(
+
+    parser.add_argument(
+        "--covar-embeddings",
+        type=str,
+        nargs="+",
+        help=(
+            "Use different word embeddings based on topic covariate values "
+            "Must specify as <topic_covar>_<value>:<optional_embedding_filename>, e.g., "
+            "`--covar-embeddings party_d,/path/to/d_emb.txt party_r,/path/to/r_emb.txt` "
+            "If no embeddings are specified, then they are randomly initialized"
+        )
+    )
+
+    parser.add_argument(
         "--update-embeddings",
         default=False,
         action="store_true",
         help="Whether to update embeddings (ignored if `w2v` not specified)",
     )
-    parser.add_option(
+
+    parser.add_argument(
         "--alpha",
         type=float,
         default=1.0,
-        help="Hyperparameter for logistic normal prior: default=%default",
+        help="Hyperparameter for logistic normal prior",
     )
-    parser.add_option(
+    parser.add_argument(
         "--no-bg",
         action="store_true",
         default=False,
-        help="Do not use background freq: default=%default",
+        help="Do not use background freq",
     )
-    parser.add_option(
+    parser.add_argument(
         "--dev-folds",
         type=int,
         default=0,
         help="Number of dev folds. Ignored if --dev-prefix is used. default=%default"
     )
-    parser.add_option(
+    parser.add_argument(
         "--dev-fold",
         type=int,
         default=0,
         help="Fold to use as dev (if dev_folds > 0). Ignored if --dev-prefix is used. default=%default",
     )
-    parser.add_option(
-        "--device", type=int, default=None, help="GPU to use: default=%default"
+    parser.add_argument(
+        "--device", type=int, default=None, help="GPU to use"
     )
-    parser.add_option(
-        "--seed", type=int, default=None, help="Random seed: default=%default"
+    parser.add_argument(
+        "--seed", type=int, default=None, help="Random seed"
     )
 
-    options, args = parser.parse_args(args)
+    options = parser.parse_args()
 
-    input_dir = args[0]
+    input_dir = options.input_directory
 
     if options.r:
         options.l1_topics = 1.0
@@ -372,13 +387,40 @@ def main(args):
         print(key + ":", val)
 
     # load word vectors
-    embeddings, update_embeddings = load_word_vectors(options, rng, vocab)
+    embeddings = {} # a dictionary storing each embedding under its index
+    embeddings[-1], update_embeddings = load_word_vectors(
+        fpath=options.word2vec_file, # if none, will randomize
+        emb_dim=options.emb_dim,
+        update_embeddings=options.update_embeddings, # for now this is a global setting
+        rng=rng,
+        vocab=vocab
+    )
+    if options.covar_embeddings:
+        for covar_embed in options.covar_embeddings:
+            covar, embed_fpath = covar_embed, None
+            if "," in covar_embed:
+                covar, embed_fpath = covar_embed.split(",")
+
+            try:
+                covar_embedding_index = topic_covar_names.index(covar)
+            except ValueError:
+                raise ValueError(f"Covariate-value pair {covar} not found")
+            
+            embeddings[covar_embedding_index], _ = load_word_vectors(
+                fpath=embed_fpath,
+                emb_dim=options.emb_dim,
+                update_embeddings=options.update_embeddings,
+                rng=rng,
+                vocab=vocab,
+            )
+        
 
     # create the model
     if options.restart:
         print(f"Loading existing model from '{options.output_dir}'")
         model, _ = load_scholar_model(
-            os.path.join(options.output_dir, "torch_model.pt"), embeddings=embeddings
+            os.path.join(options.output_dir, "torch_model.pt"),
+            embeddings=embeddings,
         )
         model.train()
         # fine-tuning hack -- if set to 0, will not train classifier
@@ -403,6 +445,7 @@ def main(args):
 
     # train the model
     print("Optimizing full model")
+
     train(
         model=model,
         network_architecture=network_architecture,
@@ -619,12 +662,13 @@ def load_covariates(
             if os.path.exists(covariates_file):
                 print("Loading covariates from", covariates_file)
                 temp = pd.read_csv(covariates_file, header=0, index_col=0)
-                covariate_names = temp.columns
+                covariate_names = covar_file_name + '_' + temp.columns
                 covariates = np.array(temp.values, dtype=np.float32)
                 # select the rows that match the non-empty documents (from load_word_counts)
                 covariates = covariates[row_selector, :]
                 covariate_list.append(covariates)
                 covariate_names_list.extend(covariate_names)
+
             else:
                 raise (
                     FileNotFoundError(
@@ -700,22 +744,22 @@ def get_init_bg(data):
     return bg.reshape(-1)
 
 
-def load_word_vectors(options, rng, vocab):
+def load_word_vectors(fpath, emb_dim, update_embeddings, rng, vocab):
+    
     # load word2vec vectors if given
-
-
-    if options.word2vec_file is not None:
+    if fpath is not None:
         vocab_size = len(vocab)
         vocab_dict = dict(zip(vocab, range(vocab_size)))
         # randomly initialize word vectors for each term in the vocabualry
         embeddings = np.array(
-            rng.rand(options.emb_dim, vocab_size) * 0.25 - 0.5, dtype=np.float32
+            rng.rand(emb_dim, vocab_size) * 0.25 - 0.5, dtype=np.float32
         )
         count = 0
         print("Loading word vectors")
         # load the word2vec vectors
+        is_binary = fpath.endswith('bin')
         pretrained = gensim.models.KeyedVectors.load_word2vec_format(
-            options.word2vec_file, binary=True
+            fpath, binary=is_binary
         )
 
         # replace the randomly initialized vectors with the word2vec ones for any that are available

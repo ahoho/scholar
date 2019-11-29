@@ -345,6 +345,7 @@ class torchScholar(nn.Module):
         self.device = device
         self.classify_from_covars = classify_from_covars
         self.classify_from_topics = classify_from_topics
+        self.use_covar_embeddings = len(init_emb) > 1
 
         # create a layer for prior covariates to influence the document prior
         if self.n_prior_covars > 0:
@@ -354,10 +355,7 @@ class torchScholar(nn.Module):
         else:
             self.prior_covar_weights = None
 
-        # create the encoder
-        self.embeddings_x_layer = nn.Linear(
-            self.vocab_size, self.words_emb_dim, bias=False
-        )
+        # create the encoder    
         emb_size = self.words_emb_dim
         classifier_input_dim = 0
         if self.classify_from_topics:
@@ -375,14 +373,22 @@ class torchScholar(nn.Module):
 
         self.encoder_dropout_layer = nn.Dropout(p=0.2)
 
-        if not update_embeddings:
-            self.embeddings_x_layer.weight.requires_grad = False
-        if init_emb is not None:
-            self.embeddings_x_layer.weight.data.copy_(torch.from_numpy(init_emb)).to(
-                self.device
-            )
-        else:
-            xavier_uniform_(self.embeddings_x_layer.weight)
+        self.embeddings_x = torch.zeros(
+            size=(len(init_emb), self.vocab_size, self.words_emb_dim),
+            requires_grad=update_embeddings
+        ).to(self.device)
+
+        self.covar_embeddings_indices = []
+        # initialize each embedding, placing them in `embeddings_x` in order of index
+        for i, (idx, emb) in enumerate(sorted(init_emb.items(), key=lambda x: x[0])):
+            if idx != -1: # -1 corresponds to the "default" general embedding
+                self.covar_embeddings_indices.append(idx) 
+            if emb is not None:
+                (self.embeddings_x[i, :, :]
+                     .data.copy_(torch.from_numpy(emb)).to(self.device)
+                )
+            else:                
+                xavier_uniform_(self.embeddings_x[i, :, :])
 
         # create the mean and variance components of the VAE
         self.mean_layer = nn.Linear(emb_size, self.n_topics)
@@ -489,9 +495,20 @@ class torchScholar(nn.Module):
         :param l1_beta_ci: np.array of prior variances on topic-covariate interactions
         :return: document representation; reconstruction; label probs; (loss, if requested)
         """
+        # TODO: it's definitely more efficient to have this outside the train loop,
+        # but this involves changing a LOT of function signatures/calls
+        import ipdb; ipdb.set_trace()
+        batch_emb_idx = TC[:, self.covar_embeddings_indices]
+        batch_emb_idx = torch.cat(
+            [(batch_emb_idx.sum(1, keepdims=True) == 0).float(), batch_emb_idx], axis=1
+        ) # first dimension is a fallback "general" embedding if no indices specified
 
-        # embed the word counts
-        en0_x = self.embeddings_x_layer(X)
+        en0_x = torch.einsum(
+            "bv,cvd,bc->bd", # order is important, else we get MemoryErrors
+            X, # [batch_size x vocab_size]
+            self.embeddings_x, # [(num_covar_embs + 1) x vocab_size x embedding_dim]
+            batch_emb_idx, # [batch_size x (num_covar_embs + 1)]
+        ) # -> [batch_size x embedding_dim]
         encoder_parts = [en0_x]
 
         # append additional components to the encoder, if given
