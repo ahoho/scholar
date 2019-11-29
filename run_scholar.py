@@ -185,23 +185,18 @@ def main(args):
         default=300,
         help="Dimension of input embeddings",
     )
-    parser.add_argument(
-        "--w2v",
-        dest="word2vec_file",
-        type=str,
-        default=None,
-        help="Use this word2vec .bin file to initialize and fix embeddings",
-    )
 
     parser.add_argument(
         "--covar-embeddings",
         type=str,
         nargs="+",
+        default=["all"],
         help=(
             "Use different word embeddings based on topic covariate values "
             "Must specify as <topic_covar>_<value>:<optional_embedding_filename>, e.g., "
             "`--covar-embeddings party_d,/path/to/d_emb.txt party_r,/path/to/r_emb.txt` "
             "If no embeddings are specified, then they are randomly initialized"
+            "Use the term 'all' for a general embedding that applies when covariates don't match"
         )
     )
 
@@ -388,31 +383,26 @@ def main(args):
 
     # load word vectors
     embeddings = {} # a dictionary storing each embedding under its index
-    embeddings[-1], update_embeddings = load_word_vectors(
-        fpath=options.word2vec_file, # if none, will randomize
-        emb_dim=options.emb_dim,
-        update_embeddings=options.update_embeddings, # for now this is a global setting
-        rng=rng,
-        vocab=vocab
-    )
-    if options.covar_embeddings:
-        for covar_embed in options.covar_embeddings:
-            covar, embed_fpath = covar_embed, None
-            if "," in covar_embed:
-                covar, embed_fpath = covar_embed.split(",")
+    for covar_embed in options.covar_embeddings:
+        covar, embed_fpath = covar_embed, None
+        if "," in covar_embed:
+            covar, embed_fpath = covar_embed.split(",")
 
-            try:
-                covar_embedding_index = topic_covar_names.index(covar)
-            except ValueError:
-                raise ValueError(f"Covariate-value pair {covar} not found")
-            
-            embeddings[covar_embedding_index], _ = load_word_vectors(
-                fpath=embed_fpath,
-                emb_dim=options.emb_dim,
-                update_embeddings=options.update_embeddings,
-                rng=rng,
-                vocab=vocab,
-            )
+        try:
+            covar_embedding_index = topic_covar_names.index(covar)
+        except ValueError:
+            if covar == 'all':
+                covar_embedding_index = -1
+            else:
+                raise ValueError(f"Covariate-value pair `{covar}` not found")
+        
+        embeddings[covar_embedding_index + 1], update_embeddings = load_word_vectors(
+            fpath=embed_fpath, # if None, they are randomly initialized
+            emb_dim=options.emb_dim,
+            update_embeddings=options.update_embeddings, # a global setting, for now
+            rng=rng,
+            vocab=vocab,
+        )
         
 
     # create the model

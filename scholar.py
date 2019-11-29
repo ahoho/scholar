@@ -381,8 +381,7 @@ class torchScholar(nn.Module):
         self.covar_embeddings_indices = []
         # initialize each embedding, placing them in `embeddings_x` in order of index
         for i, (idx, emb) in enumerate(sorted(init_emb.items(), key=lambda x: x[0])):
-            if idx != -1: # -1 corresponds to the "default" general embedding
-                self.covar_embeddings_indices.append(idx) 
+            self.covar_embeddings_indices.append(idx) 
             if emb is not None:
                 (self.embeddings_x[i, :, :]
                      .data.copy_(torch.from_numpy(emb)).to(self.device)
@@ -497,11 +496,13 @@ class torchScholar(nn.Module):
         """
         # TODO: it's definitely more efficient to have this outside the train loop,
         # but this involves changing a LOT of function signatures/calls
-        import ipdb; ipdb.set_trace()
-        batch_emb_idx = TC[:, self.covar_embeddings_indices]
         batch_emb_idx = torch.cat(
-            [(batch_emb_idx.sum(1, keepdims=True) == 0).float(), batch_emb_idx], axis=1
-        ) # first dimension is a fallback "general" embedding if no indices specified
+            [torch.ones((TC.shape[0], 1)), TC],
+            axis=1
+        )[:, self.covar_embeddings_indices]
+
+        # Take mean of embeddings when no covar matches (e.g., independents)
+        batch_emb_idx[batch_emb_idx.sum(1) == 0, :] = (1 / batch_emb_idx.shape[1])
 
         en0_x = torch.einsum(
             "bv,cvd,bc->bd", # order is important, else we get MemoryErrors
