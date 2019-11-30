@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.nn.init import xavier_uniform_
+from torch.nn.init import kaiming_uniform_, xavier_uniform_
 
 
 class Scholar(object):
@@ -386,9 +386,10 @@ class torchScholar(nn.Module):
                 (self.embeddings_x[i, :, :]
                      .data.copy_(torch.from_numpy(emb)).to(self.device)
                 )
-            else:                
+            else:
+                kaiming_uniform_(self.embeddings_x[i, :, :], a=np.sqrt(5))         
                 xavier_uniform_(self.embeddings_x[i, :, :])
-
+        
         # create the mean and variance components of the VAE
         self.mean_layer = nn.Linear(emb_size, self.n_topics)
         self.logvar_layer = nn.Linear(emb_size, self.n_topics)
