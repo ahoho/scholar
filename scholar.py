@@ -374,7 +374,7 @@ class torchScholar(nn.Module):
         self.encoder_dropout_layer = nn.Dropout(p=0.2)
 
         self.embeddings_x = torch.zeros(
-            size=(len(init_emb), self.vocab_size, self.words_emb_dim),
+            size=(len(init_emb), self.words_emb_dim, self.vocab_size),
             requires_grad=update_embeddings
         ).to(self.device)
 
@@ -508,9 +508,9 @@ class torchScholar(nn.Module):
         batch_emb_idx[batch_emb_idx.sum(1) == 0, :] = (1 / batch_emb_idx.shape[1])
 
         en0_x = torch.einsum(
-            "bv,cvd,bc->bd", # order is important, else we get MemoryErrors
+            "bv,cdv,bc->bd", # order is important, else we get MemoryErrors
             X, # [batch_size x vocab_size]
-            self.embeddings_x, # [(num_covar_embs + 1) x vocab_size x embedding_dim]
+            self.embeddings_x, # [(num_covar_embs + 1) x embedding_dim x vocab_size]
             batch_emb_idx, # [batch_size x (num_covar_embs + 1)]
         ) # -> [batch_size x embedding_dim]
         encoder_parts = [en0_x]
