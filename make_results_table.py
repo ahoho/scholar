@@ -91,6 +91,10 @@ if __name__ == '__main__':
         client=client,
         create_spread=True,
     )
+    prev_results = sheet.sheet_to_df(sheet='results')
+    results_data = (
+        prev_results.append(results_data).drop_duplicates(subset='run_name', keep='last')
+    )
     sheet.df_to_sheet(results_data, index=False, replace=True, sheet='results')
     
     # sharing
