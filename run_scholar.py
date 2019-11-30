@@ -758,7 +758,6 @@ def load_word_vectors(fpath, emb_dim, update_embeddings, rng, vocab):
                 embeddings[:, index] = pretrained[word]
 
         print("Found embeddings for %d words" % count)
-        update_embeddings = options.update_embeddings
     else:
         
         update_embeddings = True # always true if unspecified

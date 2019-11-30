@@ -372,10 +372,10 @@ class torchScholar(nn.Module):
 
         self.encoder_dropout_layer = nn.Dropout(p=0.2)
 
-        self.embeddings_x = torch.zeros(
+        self.embeddings_x = torch.nn.Parameter(torch.zeros(
             size=(len(init_emb), self.words_emb_dim, self.vocab_size),
             requires_grad=update_embeddings
-        ).to(self.device)
+        ).to(self.device))
 
         self.covar_embeddings_indices = []
         # initialize each embedding, placing them in `embeddings_x` in order of index
