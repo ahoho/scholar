@@ -345,7 +345,6 @@ class torchScholar(nn.Module):
         self.device = device
         self.classify_from_covars = classify_from_covars
         self.classify_from_topics = classify_from_topics
-        self.use_covar_embeddings = len(init_emb) > 1
 
         # create a layer for prior covariates to influence the document prior
         if self.n_prior_covars > 0:
@@ -499,11 +498,11 @@ class torchScholar(nn.Module):
         # but this involves changing a LOT of function signatures/calls
         if TC is not None:
             batch_emb_idx = torch.cat(
-                [torch.ones((TC.shape[0], 1)), TC],
+                [torch.ones((TC.shape[0], 1)).to(self.device), TC],
                 axis=1
             )[:, self.covar_embeddings_indices]
         else:
-            batch_emb_idx = torch.ones((X.shape[0], 1))
+            batch_emb_idx = torch.ones((X.shape[0], 1)).to(self.device)
         
         # Take mean of embeddings when no covar matches (e.g., independents)
         batch_emb_idx[batch_emb_idx.sum(1) == 0, :] = (1 / batch_emb_idx.shape[1])
