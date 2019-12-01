@@ -192,6 +192,12 @@ def main(args):
         help="Use this word2vec .bin file to initialize and fix embeddings: default=%default",
     )
     parser.add_option(
+        "--update-embeddings",
+        default=False,
+        action="store_true",
+        help="Whether to update embeddings (ignored if `w2v` not specified)",
+    )
+    parser.add_option(
         "--alpha",
         type=float,
         default=1.0,
@@ -696,6 +702,8 @@ def get_init_bg(data):
 
 def load_word_vectors(options, rng, vocab):
     # load word2vec vectors if given
+
+
     if options.word2vec_file is not None:
         vocab_size = len(vocab)
         vocab_dict = dict(zip(vocab, range(vocab_size)))
@@ -717,11 +725,12 @@ def load_word_vectors(options, rng, vocab):
                 embeddings[:, index] = pretrained[word]
 
         print("Found embeddings for %d words" % count)
-        update_embeddings = False
+        update_embeddings = options.update_embeddings
     else:
+        
+        update_embeddings = True # always true if unspecified
         embeddings = None
-        update_embeddings = True
-
+    
     return embeddings, update_embeddings
 
 
