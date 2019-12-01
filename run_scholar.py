@@ -714,8 +714,9 @@ def load_word_vectors(options, rng, vocab):
         count = 0
         print("Loading word vectors")
         # load the word2vec vectors
+        binary_file = options.word2vec_file.endswith('bin')
         pretrained = gensim.models.KeyedVectors.load_word2vec_format(
-            options.word2vec_file, binary=True
+            options.word2vec_file, binary=binary_file
         )
 
         # replace the randomly initialized vectors with the word2vec ones for any that are available
