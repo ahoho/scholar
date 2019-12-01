@@ -102,6 +102,19 @@ def main(args):
         default=False,
         help="Use interactions between topics and topic covariates: default=%default",
     )
+
+    parser.add_option(
+        "--classifier-layers",
+        default=1,
+        type=int,
+        help="Number of classifier layers (int between 0 and 2)"
+    )
+    parser.add_option(
+        "--classifier-dropout",
+        default=0.,
+        type=float,
+        help="Dropout to use after last classifier "
+    )
     parser.add_option(
         "--no-covars-predict",
         action="store_false",
@@ -751,7 +764,8 @@ def make_network(
         l1_beta_c_reg=options.l1_topic_covars,
         l1_beta_ci_reg=options.l1_interactions,
         l2_prior_reg=options.l2_prior_covars,
-        classifier_layers=1,
+        classifier_layers=options.classifier_layers,
+        classifier_dropout=options.classifier_dropout,
         classifier_loss_weight=options.classifier_loss_weight,
         use_interactions=options.interactions,
     )
