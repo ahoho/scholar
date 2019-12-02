@@ -754,9 +754,12 @@ def load_word_vectors(fpath, emb_dim, update_embeddings, rng, vocab):
         print("Loading word vectors")
         # load the word2vec vectors
         is_binary = fpath.endswith('bin')
-        pretrained = gensim.models.KeyedVectors.load_word2vec_format(
-            fpath, binary=is_binary
-        )
+        if is_binary:
+            pretrained = gensim.models.KeyedVectors.load_word2vec_format(
+                fpath, binary=is_binary
+            )
+        else:
+            pretrained = gensim.models.Word2Vec.load(fpath)
 
         # replace the randomly initialized vectors with the word2vec ones for any that are available
         for word, index in vocab_dict.items():
