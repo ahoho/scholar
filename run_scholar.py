@@ -185,6 +185,7 @@ def main():
         help="Dimension of input embeddings",
     )
 
+    # TODO: The following series of embedding arguments are very confusing!
     parser.add_argument(
         "--covar-embeddings",
         type=str,
@@ -192,18 +193,23 @@ def main():
         default=["all"],
         help=(
             "Use different word embeddings based on topic covariate values "
-            "Must specify as <topic_covar>_<value>:<optional_embedding_filename>, e.g., "
+            "Must specify as <topic_covar>_<value>,<optional_embedding_filename> e.g., "
             "`--covar-embeddings party_d,/path/to/d_emb.txt party_r,/path/to/r_emb.txt` "
-            "If no embeddings are specified, then they are randomly initialized"
-            "Use the term 'all' for a general embedding that applies when covariates don't match"
+            "If no embeddings are specified, then they are randomly initialized. "
+            "Use the term 'all' for a general background embedding that covariate embeddings get added to"
         )
     )
-
     parser.add_argument(
         "--update-embeddings",
         default=False,
         action="store_true",
-        help="Whether to update embeddings (ignored if `w2v` not specified)",
+        help="Whether to update embeddings (ignored if pretrained embeddings not used)",
+    )
+    parser.add_argument(
+        "--fixed-background-embeddings",
+        default=False,
+        action="store_true",
+        help="Whether to fix the baseline embedding (ignores `--update-embeddings`)",
     )
 
     parser.add_argument(
@@ -421,6 +427,7 @@ def main():
             learning_rate=options.learning_rate,
             init_embeddings=embeddings,
             update_embeddings=update_embeddings,
+            fixed_background_embeddings=options.fixed_background_embeddings,
             init_bg=init_bg,
             adam_beta1=options.momentum,
             device=options.device,

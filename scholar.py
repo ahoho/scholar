@@ -14,6 +14,7 @@ class Scholar(object):
         learning_rate=0.001,
         init_embeddings=None,
         update_embeddings=True,
+        fixed_background_embeddings=True,
         init_bg=None,
         update_background=True,
         adam_beta1=0.99,
@@ -51,6 +52,8 @@ class Scholar(object):
 
         self.update_embeddings = update_embeddings
         self.update_background = update_background
+        if 0 in init_embeddings: # 0 is the index for the background embeddings
+            self.fixed_background_embeddings = fixed_background_embeddings
 
         # create priors on the hidden state
         self.n_topics = config["n_topics"]
@@ -136,6 +139,8 @@ class Scholar(object):
         loss, nl, kld = losses
         # update model
         loss.backward()
+        if self.fixed_background_embeddings:
+            self._model.embeddings_x.grad[0, :, :] = 0.
         self.optimizer.step()
 
         if Y_probs is not None:
