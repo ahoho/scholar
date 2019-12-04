@@ -192,6 +192,12 @@ def main(args):
     )
     
     parser.add_option(
+        "--save-at-training-end",
+        action="store_true",
+        default=False,
+        help="Save model at the end of training",
+    )
+    parser.add_option(
         "--emb-dim",
         type=int,
         default=300,
@@ -416,7 +422,7 @@ def main(args):
 
     # train the model
     print("Optimizing full model")
-    train(
+    model = train(
         model=model,
         network_architecture=network_architecture,
         options=options,
@@ -438,12 +444,15 @@ def main(args):
         TC_dev=dev_topic_covars,
     )
 
-    # laod best model
-    model, _ = load_scholar_model(
-        os.path.join(options.output_dir, "torch_model.pt"), embeddings,
-    )
-    model.eval()
-
+    # load best model
+    if not options.save_at_training_end:
+        model, _ = load_scholar_model(
+            os.path.join(options.output_dir, "torch_model.pt"), embeddings,
+        )
+        model.eval()
+    else:
+        save_scholar_model(options, model, epoch=options.epoch, is_final=True)
+        model.eval()
     # display and save weights
     print_and_save_weights(options, model, vocab, prior_covar_names, topic_covar_names)
 
@@ -1337,7 +1346,7 @@ def save_document_representations(
     )
 
 
-def save_scholar_model(options, model, epoch=0, dev_metrics={}):
+def save_scholar_model(options, model, epoch=0, dev_metrics={}, is_final=False):
     """
     Save the Scholar model
     """
@@ -1348,7 +1357,7 @@ def save_scholar_model(options, model, epoch=0, dev_metrics={}):
         sha = repo.head.object.hexsha
     except git.exc.InvalidGitRepositoryError:
         sha = None
-
+    fname = 'torch_model.pt' if not is_final else 'torch_model_final.pt'
     torch.save(
         {
             # Scholar arguments
@@ -1363,7 +1372,7 @@ def save_scholar_model(options, model, epoch=0, dev_metrics={}):
             "dev_metrics": dev_metrics,
             "git_hash": sha,
         },
-        os.path.join(options.output_dir, "torch_model.pt"),
+        os.path.join(options.output_dir, fname),
     )
 
 
