@@ -492,7 +492,6 @@ class torchScholar(nn.Module):
         """
         en0_x = []
         # TODO: account for total cosponsors
-        import ipdb; ipdb.set_trace()
         if 'background' in self.embeddings_x:
             en0_x.append(torch.mm(X, self.embeddings_x['background'].T))
         if 'd' in self.embeddings_x:
