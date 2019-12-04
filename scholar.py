@@ -373,9 +373,9 @@ class torchScholar(nn.Module):
         for emb_name, (emb_data, update) in init_emb.items():
             self.embeddings_x[emb_name] = torch.nn.Parameter(
                 torch.zeros(
-                    size=(self.words_emb_dim, self.vocab_size),
-                    requires_grad=update
-                ).to(self.device)
+                    size=(self.words_emb_dim, self.vocab_size)
+                ).to(self.device),
+                requires_grad=update,
             )
             if emb_data is not None:
                 (self.embeddings_x[emb_name]
