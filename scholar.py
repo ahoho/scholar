@@ -13,8 +13,6 @@ class Scholar(object):
         alpha=1.0,
         learning_rate=0.001,
         init_embeddings=None,
-        update_embeddings=True,
-        fixed_background_embeddings=True,
         init_bg=None,
         update_background=True,
         adam_beta1=0.99,
@@ -50,10 +48,7 @@ class Scholar(object):
         self.learning_rate = learning_rate
         self.adam_beta1 = adam_beta1
 
-        self.update_embeddings = update_embeddings
         self.update_background = update_background
-        if 0 in init_embeddings: # 0 is the index for the background embeddings
-            self.fixed_background_embeddings = fixed_background_embeddings
 
         # create priors on the hidden state
         self.n_topics = config["n_topics"]
@@ -76,7 +71,6 @@ class Scholar(object):
         self._model = torchScholar(
             config,
             self.alpha,
-            update_embeddings,
             init_emb=init_embeddings,
             bg_init=init_bg,
             device=self.device,
@@ -139,8 +133,6 @@ class Scholar(object):
         loss, nl, kld = losses
         # update model
         loss.backward()
-        if self.fixed_background_embeddings:
-            self._model.embeddings_x.grad[0, :, :] = 0.
         self.optimizer.step()
 
         if Y_probs is not None:
@@ -324,7 +316,6 @@ class torchScholar(nn.Module):
         self,
         config,
         alpha,
-        update_embeddings=True,
         init_emb=None,
         bg_init=None,
         device="cpu",
@@ -376,23 +367,23 @@ class torchScholar(nn.Module):
             emb_size += self.n_labels
 
         self.encoder_dropout_layer = nn.Dropout(p=0.2)
-
-        self.embeddings_x = torch.nn.Parameter(torch.zeros(
-            size=(len(init_emb), self.words_emb_dim, self.vocab_size),
-            requires_grad=update_embeddings
-        ).to(self.device))
-
-        self.covar_embeddings_indices = []
-        # initialize each embedding, placing them in `embeddings_x` in order of index
-        for i, (idx, emb) in enumerate(sorted(init_emb.items(), key=lambda x: x[0])):
-            self.covar_embeddings_indices.append(idx) 
-            if emb is not None:
-                (self.embeddings_x[i, :, :]
-                     .data.copy_(torch.from_numpy(emb)).to(self.device)
+        
+        self.embeddings_x = torch.nn.ParameterDict()
+        # initialize each embedding
+        for emb_name, (emb_data, update) in init_emb.items():
+            self.embeddings_x[emb_name] = torch.nn.Parameter(
+                torch.zeros(
+                    size=(self.words_emb_dim, self.vocab_size),
+                    requires_grad=update
+                ).to(self.device)
+            )
+            if emb_data is not None:
+                (self.embeddings_x[emb_name]
+                     .data.copy_(torch.from_numpy(emb_data)).to(self.device)
                 )
             else:
-                kaiming_uniform_(self.embeddings_x[i, :, :], a=np.sqrt(5))         
-                xavier_uniform_(self.embeddings_x[i, :, :])
+                kaiming_uniform_(self.embeddings_x[emb_name], a=np.sqrt(5))         
+                xavier_uniform_(self.embeddings_x[emb_name])
         
         # create the mean and variance components of the VAE
         self.mean_layer = nn.Linear(emb_size, self.n_topics)
@@ -499,27 +490,16 @@ class torchScholar(nn.Module):
         :param l1_beta_ci: np.array of prior variances on topic-covariate interactions
         :return: document representation; reconstruction; label probs; (loss, if requested)
         """
-        # TODO: it's definitely more efficient to have this outside the train loop,
-        # but this involves changing a LOT of function signatures/calls
-        if TC is not None:
-            batch_emb_idx = torch.cat(
-                [torch.ones((TC.shape[0], 1)).to(self.device), TC],
-                axis=1
-            )[:, self.covar_embeddings_indices]
-        else:
-            batch_emb_idx = torch.ones((X.shape[0], 1)).to(self.device)
-        
-        # Take mean of embeddings when no covar matches (e.g., independents)
-        batch_emb_idx[batch_emb_idx.sum(1) == 0, :] = (1 / batch_emb_idx.shape[1])
-
-        en0_x = torch.einsum(
-            "bv,cdv,bc->bd", # order is important, else we get MemoryErrors
-            X, # [batch_size x vocab_size]
-            self.embeddings_x, # [(num_covar_embs + 1) x embedding_dim x vocab_size]
-            batch_emb_idx, # [batch_size x (num_covar_embs + 1)]
-        ) # -> [batch_size x embedding_dim]
-        encoder_parts = [en0_x]
-
+        en0_x = []
+        # TODO: account for total cosponsors
+        import ipdb; ipdb.set_trace()
+        if 'background' in self.embeddings_x:
+            en0_x.append(torch.mm(X, self.embeddings_x['background'].T))
+        if 'd' in self.embeddings_x:
+            en0_x.append(torch.mm(X, self.embeddings_x['d'].T) * PC[:, 0].view(-1, 1))
+        if 'r' in self.embeddings_x:
+            en0_x.append(torch.mm(X, self.embeddings_x['r'].T) * PC[:, 1].view(-1, 1))
+        encoder_parts = [torch.stack(en0_x).mean(0)]
         # append additional components to the encoder, if given
         if self.n_prior_covars > 0:
             encoder_parts.append(PC)

@@ -187,30 +187,36 @@ def main():
 
     # TODO: The following series of embedding arguments are very confusing!
     parser.add_argument(
-        "--covar-embeddings",
-        type=str,
-        nargs="+",
-        default=["all"],
-        help=(
-            "Use different word embeddings based on topic covariate values "
-            "Must specify as <topic_covar>_<value>,<optional_embedding_filename> e.g., "
-            "`--covar-embeddings party_d,/path/to/d_emb.txt party_r,/path/to/r_emb.txt` "
-            "If no embeddings are specified, then they are randomly initialized. "
-            "Use the term 'all' for a general background embedding that covariate embeddings get added to"
-        )
+        "--background-embeddings",
+        nargs="?",
+        const='random',
+        help="`--background-embeddings <optional path to embeddings>`"
     )
     parser.add_argument(
-        "--update-embeddings",
-        default=False,
-        action="store_true",
-        help="Whether to update embeddings (ignored if pretrained embeddings not used)",
+        "--democrat-embeddings",
+        nargs="?",
+        const='random',
+        help="`--democrat-embeddings <optional path to embeddings>`"
     )
     parser.add_argument(
-        "--fixed-background-embeddings",
-        default=False,
-        action="store_true",
-        help="Whether to fix the baseline embedding (ignores `--update-embeddings`)",
+        "--republican-embeddings",
+        nargs="?",
+        const='random',
+        help="`--republican-embeddings <optional path to embeddings>`"
     )
+    parser.add_argument(
+        "--fix-background-embeddings",
+        dest="update_background_embeddings",
+        action="store_false",
+        default=True,
+    )
+    parser.add_argument(
+        "--fix-partisan-embeddings",
+        dest="update_partisan_embeddings",
+        action="store_false",
+        default=True,
+    )
+    
 
     parser.add_argument(
         "--alpha",
@@ -299,6 +305,11 @@ def main():
 
     if n_labels > 0:
         print("Train label proportions:", np.mean(train_labels, axis=0))
+        
+    # get the cosponsor data
+    cosponsor_data = pd.read_csv(
+        os.path.join(input_dir, "cosponsor_data.csv"), index_col=0
+    )
 
     # split into training and dev if desired
     train_indices, dev_indices = train_dev_split(options, rng)
@@ -315,9 +326,9 @@ def main():
         train_ids = [train_ids[i] for i in train_indices]
     else:
         dev_ids = None
-
-    n_train, _ = train_X.shape
     
+    n_train, _ = train_X.shape
+
     # load the dev data
     if options.dev_prefix is not None:
         dev_X, _, row_selector, dev_ids = load_word_counts(
@@ -342,6 +353,7 @@ def main():
         )
 
     # load the test data
+    test_ids = None
     if options.test_prefix is not None:
         test_X, _, row_selector, test_ids = load_word_counts(
             input_dir, options.test_prefix, vocab=vocab
@@ -372,6 +384,22 @@ def main():
         test_prior_covars = None
         test_topic_covars = None
 
+    # collect cosponsor data
+    total_two_party = (cosponsor_data.d_perc + cosponsor_data.r_perc)
+    cosponsor_data['d_perc'] = cosponsor_data.d_perc / total_two_party
+    cosponsor_data['r_perc'] = cosponsor_data.r_perc / total_two_party
+    cosponsor_data = cosponsor_data[['d_perc', 'r_perc', 'total_sponsors']]
+    
+    # hijack the unused `prior_covars` by storing this data in these objects
+    # luckily all checks are performed on `n_prior_covars`, which is 0
+    # but the data still get passed around
+    train_prior_covars = cosponsor_data.loc[train_ids].values
+    dev_prior_covars = cosponsor_data.loc[dev_ids].values if dev_ids is not None else None
+    test_prior_covars = cosponsor_data.loc[test_ids].values if test_ids is not None else None
+
+    assert(len(set(train_ids)) == len(train_ids))
+    assert(train_prior_covars.shape[0] == len(train_ids))
+
     # initialize the background using overall word frequencies
     init_bg = get_init_bg(train_X)
     if options.no_bg:
@@ -387,29 +415,35 @@ def main():
         print(key + ":", val)
 
     # load word vectors
-    embeddings = {} # a dictionary storing each embedding under its index
-    for covar_embed in options.covar_embeddings:
-        covar, embed_fpath = covar_embed, None
-        if "," in covar_embed:
-            covar, embed_fpath = covar_embed.split(",")
-
-        try:
-            covar_embedding_index = topic_covar_names.index(covar)
-        except (ValueError, AttributeError) as e:
-            if covar == 'all':
-                covar_embedding_index = -1
-            else:
-                raise ValueError(f"Covariate-value pair `{covar}` not found")
-        
-        embeddings[covar_embedding_index + 1], update_embeddings = load_word_vectors(
-            fpath=embed_fpath, # if None, they are randomly initialized
+    embeddings = {}
+    if options.background_embeddings:
+        fpath = None if options.background_embeddings == 'random' else options.background_embeddings
+        embeddings['background'] = load_word_vectors(
+            fpath=fpath, # if None, they are randomly initialized
             emb_dim=options.emb_dim,
-            update_embeddings=options.update_embeddings, # a global setting, for now
+            update_embeddings=options.update_background_embeddings,
+            rng=rng,
+            vocab=vocab,
+        )
+    if options.democrat_embeddings:
+        fpath = None if options.democrat_embeddings == 'random' else options.democrat_embeddings
+        embeddings['d'] = load_word_vectors(
+            fpath=fpath,
+            emb_dim=options.emb_dim,
+            update_embeddings=options.update_partisan_embeddings,
+            rng=rng,
+            vocab=vocab,
+        )
+    if options.republican_embeddings:
+        fpath = None if options.republican_embeddings == 'random' else options.republican_embeddings
+        embeddings['r'] = load_word_vectors(
+            fpath=fpath,
+            emb_dim=options.emb_dim,
+            update_embeddings=options.update_partisan_embeddings,
             rng=rng,
             vocab=vocab,
         )
         
-
     # create the model
     if options.restart:
         print(f"Loading existing model from '{options.output_dir}'")
@@ -426,8 +460,6 @@ def main():
             alpha=options.alpha,
             learning_rate=options.learning_rate,
             init_embeddings=embeddings,
-            update_embeddings=update_embeddings,
-            fixed_background_embeddings=options.fixed_background_embeddings,
             init_bg=init_bg,
             adam_beta1=options.momentum,
             device=options.device,
@@ -464,7 +496,7 @@ def main():
         TC_dev=dev_topic_covars,
     )
 
-    # laod best model
+    # load best model
     model, _ = load_scholar_model(
         os.path.join(options.output_dir, "torch_model.pt"), embeddings,
     )
