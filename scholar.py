@@ -498,7 +498,10 @@ class torchScholar(nn.Module):
             en0_x.append(torch.mm(X, self.embeddings_x['d'].T) * PC[:, 0].view(-1, 1))
         if 'r' in self.embeddings_x:
             en0_x.append(torch.mm(X, self.embeddings_x['r'].T) * PC[:, 1].view(-1, 1))
-        encoder_parts = [torch.stack(en0_x).mean(0)]
+
+        en0_x = torch.stack(en0_x).mean(0)
+        encoder_parts = [en0_x]
+        
         # append additional components to the encoder, if given
         if self.n_prior_covars > 0:
             encoder_parts.append(PC)

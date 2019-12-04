@@ -389,6 +389,8 @@ def main():
     cosponsor_data['d_perc'] = cosponsor_data.d_perc / total_two_party
     cosponsor_data['r_perc'] = cosponsor_data.r_perc / total_two_party
     cosponsor_data = cosponsor_data[['d_perc', 'r_perc', 'total_sponsors']]
+    # account for zeros
+    cosponsor_data = cosponsor_data.fillna(0 if options.background_embeddings else 0.5)
     
     # hijack the unused `prior_covars` by storing this data in these objects
     # luckily all checks are performed on `n_prior_covars`, which is 0
@@ -443,7 +445,7 @@ def main():
             rng=rng,
             vocab=vocab,
         )
-        
+
     # create the model
     if options.restart:
         print(f"Loading existing model from '{options.output_dir}'")
