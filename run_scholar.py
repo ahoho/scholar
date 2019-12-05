@@ -451,7 +451,7 @@ def main(args):
         )
         model.eval()
     else:
-        save_scholar_model(options, model, epoch=options.epoch, is_final=True)
+        save_scholar_model(options, model, epoch=options.epochs, is_final=True)
         model.eval()
     # display and save weights
     print_and_save_weights(options, model, vocab, prior_covar_names, topic_covar_names)
