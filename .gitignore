@@ -104,8 +104,7 @@ ENV/
 data
 output*
 tutorial
-congress_votes
-
+congress_votes*
 google_secret.json
 
 # IntelliJ
