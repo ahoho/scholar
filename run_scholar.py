@@ -446,13 +446,12 @@ def main(args):
     )
 
     # load best model
-    if not options.save_at_training_end:
-        model, _ = load_scholar_model(
-            os.path.join(options.output_dir, "torch_model.pt"), embeddings,
-        )
+    model_fpath = os.path.join(options.output_dir, "torch_model.pt")
+    if not options.save_at_training_end and os.path.exists(model_fpath):
+        model, _ = load_scholar_model(model_fpath, embeddings)
         model.eval()
     else:
-        save_scholar_model(options, model, epoch=options.epoch, is_final=True)
+        save_scholar_model(options, model, epoch=options.epochs, is_final=True)
         model.eval()
     # display and save weights
     print_and_save_weights(options, model, vocab, prior_covar_names, topic_covar_names)
@@ -971,6 +970,7 @@ def train(
                 epoch_metrics["perplexity"] = dev_perplexity
 
                 # accuracy
+                dev_accuracy = "N/A"
                 if network_architecture["n_labels"] > 0:
                     dev_pred_probs = predict_label_probs(
                         model, X_dev, PC_dev, TC_dev, eta_bn_prop=eta_bn_prop
@@ -981,17 +981,17 @@ def train(
                     ) / float(n_dev)
                     epoch_metrics["accuracy"] = dev_accuracy
 
-                    print(
-                        "Epoch: %d; Dev perplexity = %0.4f; Dev accuracy = %0.4f"
-                        % (epoch, dev_perplexity, dev_accuracy)
-                    )
-                else:
-                    print("Epoch: %d; Dev perplexity = %0.4f" % (epoch, dev_perplexity))
-
                 # NPMI
                 topics = generate_topics(model.get_weights(), vocab, n=10)
-                epoch_metrics["npmi"] = compute_npmi_at_n(
-                    topics=topics, ref_vocab=vocab, ref_counts=X_dev.tocsc(), n=10
+                dev_npmi = compute_npmi_at_n(
+                    topics, vocab, ref_counts=X_dev.tocsc(), n=10, silent=True
+                )
+                epoch_metrics["npmi"] = dev_npmi
+
+                print(
+                    f"Dev perplexity = {dev_perplexity:0.4f}; "
+                    f"Dev accuracy = {dev_accuracy:0.4f}; "
+                    f"Dev NPMI = {dev_npmi:0.4f}"
                 )
 
                 best_dev_metrics = update_metrics(epoch_metrics, best_dev_metrics, epoch)
@@ -1091,7 +1091,7 @@ def update_metrics(current, best, epoch):
             sign = +1
         
         if sign * current[metric] > sign * best[metric]["value"]:
-            best[metric]["value"] = best[metric]
+            best[metric]["value"] = current[metric]
             best[metric]["epoch"] = epoch
     
     return best
