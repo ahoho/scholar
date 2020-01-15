@@ -422,27 +422,28 @@ def main(args):
 
     # train the model
     print("Optimizing full model")
-    model = train(
-        model=model,
-        network_architecture=network_architecture,
-        options=options,
-        X=train_X,
-        Y=train_labels,
-        PC=train_prior_covars,
-        TC=train_topic_covars,
-        vocab=vocab,
-        prior_covar_names=prior_covar_names,
-        topic_covar_names=topic_covar_names,
-        training_epochs=options.epochs,
-        batch_size=options.batch_size,
-        patience=options.patience,
-        dev_metric=options.dev_metric,
-        rng=rng,
-        X_dev=dev_X,
-        Y_dev=dev_labels,
-        PC_dev=dev_prior_covars,
-        TC_dev=dev_topic_covars,
-    )
+    if options.epochs > 0:
+        model = train(
+            model=model,
+            network_architecture=network_architecture,
+            options=options,
+            X=train_X,
+            Y=train_labels,
+            PC=train_prior_covars,
+            TC=train_topic_covars,
+            vocab=vocab,
+            prior_covar_names=prior_covar_names,
+            topic_covar_names=topic_covar_names,
+            training_epochs=options.epochs,
+            batch_size=options.batch_size,
+            patience=options.patience,
+            dev_metric=options.dev_metric,
+            rng=rng,
+            X_dev=dev_X,
+            Y_dev=dev_labels,
+            PC_dev=dev_prior_covars,
+            TC_dev=dev_topic_covars,
+        )
 
     # load best model
     if not options.save_at_training_end:
