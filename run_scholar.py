@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 import file_handling as fh
 from scholar import Scholar
+from compute_npmi import compute_npmi_at_n
 
 
 def main(args):
@@ -57,8 +58,8 @@ def main(args):
         "--dev-metric",
         dest="dev_metric",
         type=str,
-        default="-perplexity",  # TODO: constrain options
-        help="Optimize accuracy or perplexity (must prefix with + or - to indicate direction)",
+        default="perplexity",  # TODO: constrain options
+        help="Optimize accuracy, perplexity, or internal npmi",
     )
     parser.add_option(
         "--train-prefix",
@@ -446,10 +447,9 @@ def main(args):
         )
 
     # load best model
-    if not options.save_at_training_end:
-        model, _ = load_scholar_model(
-            os.path.join(options.output_dir, "torch_model.pt"), embeddings,
-        )
+    model_fpath = os.path.join(options.output_dir, "torch_model.pt")
+    if not options.save_at_training_end and os.path.exists(model_fpath):
+        model, _ = load_scholar_model(model_fpath, embeddings)
         model.eval()
     else:
         save_scholar_model(options, model, epoch=options.epochs, is_final=True)
@@ -796,7 +796,7 @@ def train(
     batch_size=200,
     training_epochs=100,
     patience=10,
-    dev_metric="-perplexity",
+    dev_metric="perplexity",
     display_step=1,
     X_dev=None,
     Y_dev=None,
@@ -813,9 +813,8 @@ def train(
     total_batch = int(n_train / batch_size)
     batches = 0
 
-    dev_sign, dev_metric = dev_metric[:1], dev_metric[1:]
-    sgn = -1 if dev_sign == "-" else 1
-    best_dev_metrics = {"perplexity": -sgn * np.inf, "accuracy": -sgn * np.inf}
+    best_dev_metrics = None
+
     num_epochs_no_improvement = 0
 
     eta_bn_prop = init_eta_bn_prop  # interpolation between batch norm and no batch norm in final layer of recon
@@ -944,6 +943,8 @@ def train(
             if X_dev is not None:
                 # switch to eval mode for intermediate evaluation
                 model.eval()
+
+                # perplexity
                 dev_perplexity = evaluate_perplexity(
                     model,
                     X_dev,
@@ -956,6 +957,8 @@ def train(
                 n_dev, _ = X_dev.shape
                 epoch_metrics["perplexity"] = dev_perplexity
 
+                # accuracy
+                dev_accuracy = "N/A"
                 if network_architecture["n_labels"] > 0:
                     dev_pred_probs = predict_label_probs(
                         model, X_dev, PC_dev, TC_dev, eta_bn_prop=eta_bn_prop
@@ -966,20 +969,22 @@ def train(
                     ) / float(n_dev)
                     epoch_metrics["accuracy"] = dev_accuracy
 
-                    print(
-                        "Epoch: %d; Dev perplexity = %0.4f; Dev accuracy = %0.4f"
-                        % (epoch, dev_perplexity, dev_accuracy)
-                    )
-                else:
-                    print("Epoch: %d; Dev perplexity = %0.4f" % (epoch, dev_perplexity))
+                # NPMI
+                topics = generate_topics(model.get_weights(), vocab, n=10)
+                dev_npmi = compute_npmi_at_n(
+                    topics, vocab, ref_counts=X_dev.tocsc(), n=10, silent=True
+                )
+                epoch_metrics["npmi"] = dev_npmi
 
-                if sgn * epoch_metrics[dev_metric] > sgn * best_dev_metrics[dev_metric]:
-                    best_dev_metrics[dev_metric] = epoch_metrics[dev_metric]
+                print(
+                    f"Dev perplexity = {dev_perplexity:0.4f}; "
+                    f"Dev accuracy = {dev_accuracy:0.4f}; "
+                    f"Dev NPMI = {dev_npmi:0.4f}"
+                )
+
+                best_dev_metrics = update_metrics(epoch_metrics, best_dev_metrics, epoch)
+                if best_dev_metrics[dev_metric]["epoch"] == epoch:
                     num_epochs_no_improvement = 0
-
-                    #print_and_save_weights(
-                    #    options, model, vocab, prior_covar_names, topic_covar_names
-                    #)
                     save_scholar_model(options, model, epoch, best_dev_metrics)
                 else:
                     num_epochs_no_improvement += 1
@@ -1058,6 +1063,29 @@ def get_minibatch(X, Y, PC, TC, batch, batch_size=200):
         TC_mb = None
 
     return X_mb, Y_mb, PC_mb, TC_mb
+
+
+def update_metrics(current, best=None, epoch=None):
+    """
+    Update the best metrics with the current metrics if they have improved
+    """
+    if best is None:
+        best = {
+            "perplexity": {"value": np.inf},
+            "accuracy": {"value": -np.inf},
+            "npmi": {"value": -np.inf},
+        }
+
+    for metric in current:
+        sign = -1 if metric == "perplexity" else +1
+
+        if sign * current[metric] > sign * best[metric]["value"]:
+            best[metric] = {
+                "value": current[metric],
+                "epoch": epoch
+            }
+    
+    return best
 
 
 def predict_label_probs(model, X, PC, TC, batch_size=200, eta_bn_prop=0.0):
@@ -1257,18 +1285,27 @@ def save_weights(output_dir, beta, bg, feature_names, sparsity_threshold=1e-5):
     )
 
     topics_file = os.path.join(output_dir, "topics.txt")
+    lines = generate_topics(
+        beta, feature_names, n=100, sparsity_threshold=sparsity_threshold
+    )
+
+    fh.write_list_to_text(lines, topics_file)
+
+def generate_topics(beta, feature_names, n=100, sparsity_threshold=1e-5):
+    """
+    Create topics from the beta parameter
+    """
     lines = []
     for i in range(len(beta)):
         order = list(np.argsort(beta[i]))
         order.reverse()
         pos_words = [
-            feature_names[j] for j in order[:100] if beta[i][j] > sparsity_threshold
+            feature_names[j] for j in order[:n] if beta[i][j] > sparsity_threshold
         ]
         output = " ".join(pos_words)
         lines.append(output)
-
-    fh.write_list_to_text(lines, topics_file)
-
+    
+    return lines
 
 def predict_labels_and_evaluate(
     model, X, Y, PC, TC, output_dir=None, subset="train", batch_size=200
