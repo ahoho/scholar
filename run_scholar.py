@@ -179,13 +179,14 @@ def main():
         help="Restart training with model in output-dir",
     )
     
-    parser.add_option(
+    parser.add_argument(
         "--save-at-training-end",
         action="store_true",
         default=False,
         help="Save model at the end of training",
     )
-    parser.add_option(
+
+    parser.add_argument(
         "--emb-dim",
         type=int,
         default=300,
@@ -461,8 +462,6 @@ def main():
             embeddings=embeddings,
         )
         model.train()
-        # fine-tuning hack -- if set to 0, will not train classifier
-        model._model.classifier_loss_weight = options.classifier_loss_weight
     else:
         model = Scholar(
             network_architecture,
@@ -482,27 +481,28 @@ def main():
 
     # train the model
     print("Optimizing full model")
-    model = train(
-        model=model,
-        network_architecture=network_architecture,
-        options=options,
-        X=train_X,
-        Y=train_labels,
-        PC=train_prior_covars,
-        TC=train_topic_covars,
-        vocab=vocab,
-        prior_covar_names=prior_covar_names,
-        topic_covar_names=topic_covar_names,
-        training_epochs=options.epochs,
-        batch_size=options.batch_size,
-        patience=options.patience,
-        dev_metric=options.dev_metric,
-        rng=rng,
-        X_dev=dev_X,
-        Y_dev=dev_labels,
-        PC_dev=dev_prior_covars,
-        TC_dev=dev_topic_covars,
-    )
+    if options.epochs > 0:
+        model = train(
+            model=model,
+            network_architecture=network_architecture,
+            options=options,
+            X=train_X,
+            Y=train_labels,
+            PC=train_prior_covars,
+            TC=train_topic_covars,
+            vocab=vocab,
+            prior_covar_names=prior_covar_names,
+            topic_covar_names=topic_covar_names,
+            training_epochs=options.epochs,
+            batch_size=options.batch_size,
+            patience=options.patience,
+            dev_metric=options.dev_metric,
+            rng=rng,
+            X_dev=dev_X,
+            Y_dev=dev_labels,
+            PC_dev=dev_prior_covars,
+            TC_dev=dev_topic_covars,
+        )
 
     # load best model
     model_fpath = os.path.join(options.output_dir, "torch_model.pt")
