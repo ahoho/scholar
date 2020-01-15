@@ -871,20 +871,7 @@ def train(
     total_batch = int(n_train / batch_size)
     batches = 0
 
-    best_dev_metrics = {
-        "perplexity": {
-            "value": np.inf, 
-            "epoch": None
-        },
-        "accuracy": {
-            "value": np.inf, 
-            "epoch": None
-        },
-        "npmi": {
-            "value": np.inf, 
-            "epoch": None
-        },
-    }
+    best_dev_metrics = None
 
     num_epochs_no_improvement = 0
 
@@ -1136,22 +1123,25 @@ def get_minibatch(X, Y, PC, TC, batch, batch_size=200):
     return X_mb, Y_mb, PC_mb, TC_mb
 
 
-def update_metrics(current, best, epoch):
+def update_metrics(current, best=None, epoch=None):
     """
     Update the best metrics with the current metrics if they have improved
     """
-    
+    if best is None:
+        best = {
+            "perplexity": {"value": np.inf},
+            "accuracy": {"value": -np.inf},
+            "npmi": {"value": -np.inf},
+        }
+
     for metric in current:
-        if metric == "accuracy":
-            sign = +1
-        if metric == "perplexity":
-            sign = -1
-        if metric == "npmi":
-            sign = +1
-        
+        sign = -1 if metric == "perplexity" else +1
+
         if sign * current[metric] > sign * best[metric]["value"]:
-            best[metric]["value"] = current[metric]
-            best[metric]["epoch"] = epoch
+            best[metric] = {
+                "value": current[metric],
+                "epoch": epoch
+            }
     
     return best
 
