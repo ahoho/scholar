@@ -857,9 +857,11 @@ def train(
         )
     else:
         l1_beta_ci = None
-
+    
+    results_history = []
     # Training cycle
     for epoch in range(training_epochs):
+        epoch_dic = {}
         avg_cost = 0.0
         accuracy = 0.0
         avg_nl = 0.0
@@ -898,6 +900,8 @@ def train(
                 )
                 sys.exit()
 
+        epoch_dic['train_acc'] = accuracy
+        epoch_dic['train_cost'] = avg_cost
         # if we're using regularization, update the priors on the individual weights
         if network_architecture["l1_beta_reg"] > 0:
             weights = model.get_weights().T
@@ -956,9 +960,9 @@ def train(
                 )
                 n_dev, _ = X_dev.shape
                 epoch_metrics["perplexity"] = dev_perplexity
-
+                epoch_dic['dev_perplexity'] = dev_perplexity
                 # accuracy
-                dev_accuracy = "N/A"
+                dev_accuracy = 0 
                 if network_architecture["n_labels"] > 0:
                     dev_pred_probs = predict_label_probs(
                         model, X_dev, PC_dev, TC_dev, eta_bn_prop=eta_bn_prop
@@ -968,6 +972,7 @@ def train(
                         np.sum(dev_predictions == np.argmax(Y_dev, axis=1))
                     ) / float(n_dev)
                     epoch_metrics["accuracy"] = dev_accuracy
+                    epoch_dic['dev_accuracy'] = dev_accuracy
 
                 # NPMI
                 topics = generate_topics(model.get_weights(), vocab, n=10)
@@ -975,12 +980,15 @@ def train(
                     topics, vocab, ref_counts=X_dev.tocsc(), n=10, silent=True
                 )
                 epoch_metrics["npmi"] = dev_npmi
+                epoch_dic['dev_npmi'] = dev_npmi
 
                 print(
                     f"Dev perplexity = {dev_perplexity:0.4f}; "
                     f"Dev accuracy = {dev_accuracy:0.4f}; "
                     f"Dev NPMI = {dev_npmi:0.4f}"
                 )
+                
+                results_history.append(epoch_dic)
 
                 best_dev_metrics = update_metrics(epoch_metrics, best_dev_metrics, epoch)
                 if best_dev_metrics[dev_metric]["epoch"] == epoch:
@@ -990,6 +998,7 @@ def train(
                     num_epochs_no_improvement += 1
                 if patience is not None and num_epochs_no_improvement >= patience:
                     print(f"Ran out of patience ({patience} epochs), returning model")
+                    np.save(os.path.join(options.output_dir, "results_history.npy"), results_history)
                     return model
                 # switch back to training mode
                 model.train()
@@ -1003,6 +1012,7 @@ def train(
 
     # finish tr
     model.eval()
+    np.save(os.path.join(options.output_dir, "results_history.npy"), results_history)
     return model
 
 
