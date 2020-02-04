@@ -14,7 +14,7 @@ from scholar import Scholar
 from compute_npmi import compute_npmi_at_n
 
 
-def main():
+def main(call=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("input_directory")
     parser.add_argument(
@@ -224,6 +224,18 @@ def main():
         action="store_false",
         default=True,
     )
+    parser.add_argument(
+        "--no-document-dependent-embeds",
+        action="store_true",
+        default=False,
+        help="Experimental baseline against which to compare document-dependent embeddings models",
+    )
+    parser.add_argument(
+        "--hard-partisan-embeds",
+        action="store_true",
+        default=False,
+        help="Experimental setting to force weights on partisan embeddings to be 0/1",
+    )
     
 
     parser.add_argument(
@@ -257,7 +269,7 @@ def main():
         "--seed", type=int, default=None, help="Random seed"
     )
 
-    options = parser.parse_args()
+    options = parser.parse_args(call)
 
     input_dir = options.input_directory
 
@@ -400,13 +412,17 @@ def main():
     # account for zeros
     cosponsor_data = cosponsor_data.fillna(0 if options.background_embeddings else 0.5)
     
+    if options.no_document_dependent_embeds:
+        cosponsor_data[['d_perc', 'r_perc']] = 1.
+    if options.hard_partisan_embeds:
+        cosponsor_data[['d_perc', 'r_perc']] = 1. * (cosponsor_data[['d_perc', 'r_perc']] > 0.5)
     # hijack the unused `prior_covars` by storing this data in these objects
     # luckily all checks are performed on `n_prior_covars`, which is 0
     # but the data still get passed around
     train_prior_covars = cosponsor_data.loc[train_ids].values
     dev_prior_covars = cosponsor_data.loc[dev_ids].values if dev_ids is not None else None
     test_prior_covars = cosponsor_data.loc[test_ids].values if test_ids is not None else None
-
+        
     assert(len(set(train_ids)) == len(train_ids))
     assert(train_prior_covars.shape[0] == len(train_ids))
 
@@ -1016,7 +1032,7 @@ def train(
                 epoch_metrics["perplexity"] = dev_perplexity
 
                 # accuracy
-                dev_accuracy = "N/A"
+                dev_accuracy = 0
                 if network_architecture["n_labels"] > 0:
                     dev_pred_probs = predict_label_probs(
                         model, X_dev, PC_dev, TC_dev, eta_bn_prop=eta_bn_prop
