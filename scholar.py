@@ -491,14 +491,17 @@ class torchScholar(nn.Module):
         :return: document representation; reconstruction; label probs; (loss, if requested)
         """
         en0_x = []
-        # TODO: account for total cosponsors
-        if 'background' in self.embeddings_x:
-            en0_x.append(torch.mm(X, self.embeddings_x['background'].T))
-        if 'd' in self.embeddings_x:
-            en0_x.append(torch.mm(X, self.embeddings_x['d'].T) * PC[:, 0].view(-1, 1))
-        if 'r' in self.embeddings_x:
-            en0_x.append(torch.mm(X, self.embeddings_x['r'].T) * PC[:, 1].view(-1, 1))
 
+        deviation_covar_idx = 0
+        for emb_name, embedding in self.embeddings_x.items():
+            mapped_embeddings = torch.mm(X, embedding.T)
+            if 'background' == emb:
+                en0_x.append(mapped_embeddings)
+            else:
+                deviation_covar = PC[:, deviation_covar_idx].view(-1, 1)
+                en0_x.append(mapped_embeddings * deviation_covar)
+                deviation_covar_idx += 1
+        
         en0_x = torch.stack(en0_x).mean(0)
         encoder_parts = [en0_x]
         

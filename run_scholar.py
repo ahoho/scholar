@@ -193,7 +193,6 @@ def main(call=None):
         help="Dimension of input embeddings",
     )
 
-    # TODO: The following series of embedding arguments are very confusing!
     parser.add_argument(
         "--background-embeddings",
         nargs="?",
@@ -201,17 +200,16 @@ def main(call=None):
         help="`--background-embeddings <optional path to embeddings>`"
     )
     parser.add_argument(
-        "--democrat-embeddings",
+        "--deviation-embeddings",
         nargs="?",
         const='random',
-        help="`--democrat-embeddings <optional path to embeddings>`"
+        help="`--deviation-embeddings <optional path to embeddings>`"
     )
     parser.add_argument(
-        "--republican-embeddings",
-        nargs="?",
-        const='random',
-        help="`--republican-embeddings <optional path to embeddings>`"
+        "--deviation-embedding-covar",
+        help="The covariate by which to vary the embeddings"
     )
+
     parser.add_argument(
         "--fix-background-embeddings",
         dest="update_background_embeddings",
@@ -219,22 +217,16 @@ def main(call=None):
         default=True,
     )
     parser.add_argument(
-        "--fix-partisan-embeddings",
+        "--fix-deviation-embeddings",
         dest="update_partisan_embeddings",
         action="store_false",
         default=True,
     )
     parser.add_argument(
-        "--no-document-dependent-embeds",
+        "--ignore-deviation-embeddings",
         action="store_true",
         default=False,
-        help="Experimental baseline against which to compare document-dependent embeddings models",
-    )
-    parser.add_argument(
-        "--hard-partisan-embeds",
-        action="store_true",
-        default=False,
-        help="Experimental setting to force weights on partisan embeddings to be 0/1",
+        help="Experimental baseline to maintain parameter number",
     )
     
 
@@ -290,11 +282,11 @@ def main(call=None):
         seed = None
 
     # load the training data
-    train_X, vocab, row_selector, train_ids = load_word_counts(
+    train_X, vocab, train_row_selector, train_ids = load_word_counts(
         input_dir, options.train_prefix
     )
     train_labels, label_type, label_names, n_labels = load_labels(
-        input_dir, options.train_prefix, row_selector, options
+        input_dir, options.train_prefix, train_row_selector, options.labels
     )
     (
         train_prior_covars,
@@ -304,7 +296,7 @@ def main(call=None):
     ) = load_covariates(
         input_dir,
         options.train_prefix,
-        row_selector,
+        train_row_selector,
         options.prior_covars,
         options.min_prior_covar_count,
     )
@@ -316,7 +308,7 @@ def main(call=None):
     ) = load_covariates(
         input_dir,
         options.train_prefix,
-        row_selector,
+        train_row_selector,
         options.topic_covars,
         options.min_topic_covar_count,
     )
@@ -351,23 +343,23 @@ def main(call=None):
 
     # load the dev data
     if options.dev_prefix is not None:
-        dev_X, _, row_selector, dev_ids = load_word_counts(
+        dev_X, _, dev_row_selector, dev_ids = load_word_counts(
             input_dir, options.dev_prefix, vocab=vocab
         )
         dev_labels, _, _, _ = load_labels(
-            input_dir, options.dev_prefix, row_selector, options
+            input_dir, options.dev_prefix, dev_row_selector, options.labels
         )
         dev_prior_covars, _, _, _ = load_covariates(
             input_dir,
             options.dev_prefix,
-            row_selector,
+            dev_row_selector,
             options.prior_covars,
             covariate_selector=prior_covar_selector,
         )
         dev_topic_covars, _, _, _ = load_covariates(
             input_dir,
             options.dev_prefix,
-            row_selector,
+            dev_row_selector,
             options.topic_covars,
             covariate_selector=topic_covar_selector,
         )
@@ -375,23 +367,23 @@ def main(call=None):
     # load the test data
     test_ids = None
     if options.test_prefix is not None:
-        test_X, _, row_selector, test_ids = load_word_counts(
+        test_X, _, test_row_selector, test_ids = load_word_counts(
             input_dir, options.test_prefix, vocab=vocab
         )
         test_labels, _, _, _ = load_labels(
-            input_dir, options.test_prefix, row_selector, options
+            input_dir, options.test_prefix, test_row_selector, options.labels
         )
         test_prior_covars, _, _, _ = load_covariates(
             input_dir,
             options.test_prefix,
-            row_selector,
+            test_row_selector,
             options.prior_covars,
             covariate_selector=prior_covar_selector,
         )
         test_topic_covars, _, _, _ = load_covariates(
             input_dir,
             options.test_prefix,
-            row_selector,
+            test_row_selector,
             options.topic_covars,
             covariate_selector=topic_covar_selector,
         )
@@ -404,27 +396,32 @@ def main(call=None):
         test_prior_covars = None
         test_topic_covars = None
 
-    # collect cosponsor data
-    total_two_party = (cosponsor_data.d_perc + cosponsor_data.r_perc)
-    cosponsor_data['d_perc'] = cosponsor_data.d_perc / total_two_party
-    cosponsor_data['r_perc'] = cosponsor_data.r_perc / total_two_party
-    cosponsor_data = cosponsor_data[['d_perc', 'r_perc', 'total_sponsors']]
-    # account for zeros
-    cosponsor_data = cosponsor_data.fillna(0 if options.background_embeddings else 0.5)
-    
-    if options.no_document_dependent_embeds:
-        cosponsor_data[['d_perc', 'r_perc']] = 1.
-    if options.hard_partisan_embeds:
-        cosponsor_data[['d_perc', 'r_perc']] = 1. * (cosponsor_data[['d_perc', 'r_perc']] > 0.5)
-    # hijack the unused `prior_covars` by storing this data in these objects
-    # luckily all checks are performed on `n_prior_covars`, which is 0
-    # but the data still get passed around
-    train_prior_covars = cosponsor_data.loc[train_ids].values
-    dev_prior_covars = cosponsor_data.loc[dev_ids].values if dev_ids is not None else None
-    test_prior_covars = cosponsor_data.loc[test_ids].values if test_ids is not None else None
-        
-    assert(len(set(train_ids)) == len(train_ids))
-    assert(train_prior_covars.shape[0] == len(train_ids))
+
+    # collect label data for the deviations
+    if options.deviation_embeddings:
+        if not options.deviation_embedding_covar:
+            raise ValueError("Need to supply a covariate for deviation embeddings")
+
+        # hijack the unused `prior_covars` by storing deviation covar data in these objects
+        # luckily all checks are performed on `n_prior_covars`, which is 0
+        # but the data still get passed around
+
+        deviation_covar = options.deviation_embedding_covar
+        train_prior_covars, _, deviation_covar_names, _ = load_labels(
+            input_dir, options.train_prefix, train_row_selector, deviation_covar
+        )
+        dev_prior_covars, _, _, _ = load_labels(
+            input_dir, options.dev_prefix, dev_row_selector, deviation_covar
+        )
+        test_prior_covars, _, _, _ = load_labels(
+            input_dir, options.test_prefix, test_row_selector, deviation_covar
+        )
+        # experimental baseline setting
+        if options.ignore_deviation_embeddings:
+            train_prior_covars[:] = 1.
+            dev_prior_covars[:] = 1.
+            test_prior_covars[:] = 1.
+
 
     # initialize the background using overall word frequencies
     init_bg = get_init_bg(train_X)
@@ -451,24 +448,16 @@ def main(call=None):
             rng=rng,
             vocab=vocab,
         )
-    if options.democrat_embeddings:
-        fpath = None if options.democrat_embeddings == 'random' else options.democrat_embeddings
-        embeddings['d'] = load_word_vectors(
-            fpath=fpath,
-            emb_dim=options.emb_dim,
-            update_embeddings=options.update_partisan_embeddings,
-            rng=rng,
-            vocab=vocab,
-        )
-    if options.republican_embeddings:
-        fpath = None if options.republican_embeddings == 'random' else options.republican_embeddings
-        embeddings['r'] = load_word_vectors(
-            fpath=fpath,
-            emb_dim=options.emb_dim,
-            update_embeddings=options.update_partisan_embeddings,
-            rng=rng,
-            vocab=vocab,
-        )
+    if options.deviation_embeddings:
+        fpath = None if options.deviation_embeddings == 'random' else options.deviation_embeddings
+        for name in deviation_covar_names:
+            embeddings[name] = load_word_vectors(
+                fpath=fpath,
+                emb_dim=options.emb_dim,
+                update_embeddings=options.update_deviation_embeddings,
+                rng=rng,
+                vocab=vocab,
+            )
 
     # create the model
     if options.restart:
@@ -667,15 +656,15 @@ def load_word_counts(input_dir, input_prefix, vocab=None):
     return X, vocab, row_selector, ids
 
 
-def load_labels(input_dir, input_prefix, row_selector, options):
+def load_labels(input_dir, input_prefix, row_selector, labels=None):
     labels = None
     label_type = None
     label_names = None
     n_labels = 0
     # load the label file if given
-    if options.labels is not None:
+    if labels is not None:
         label_file = os.path.join(
-            input_dir, input_prefix + "." + options.labels + ".csv"
+            input_dir, input_prefix + "." + labels + ".csv"
         )
         if os.path.exists(label_file):
             print("Loading labels from", label_file)
