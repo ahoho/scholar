@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+import shutil
 
 import numpy as np
 import pandas as pd
@@ -10,12 +11,16 @@ from run_scholar import main
 if __name__ == "__main__":
     run_parser = argparse.ArgumentParser()
     run_parser.add_argument("--runs", default=1, type=int)
+    run_parser.add_argument("--global-seed", type=int)
+    run_parser.add_argument("--store-all", default=False, action='store_true')
     run_args, additional_args = run_parser.parse_known_args()
 
     outdir_parser = argparse.ArgumentParser()
     outdir_parser.add_argument("-o")
     outdir_args, _ = outdir_parser.parse_known_args(additional_args)
     
+    np.random.seed(run_args.global_seed)
+
     for run in range(run_args.runs):
         print(f"On run {run}")
         seed = np.random.randint(0, 1000000)
@@ -52,3 +57,10 @@ if __name__ == "__main__":
             mode='a',
             header=run==0,
         )
+        if run_args.store_all:
+            seed_path = Path(outdir_args.o, str(seed))
+            if not seed_path.exists():
+                seed_path.mkdir()
+            for fpath in Path(outdir_args.o).glob("*"):
+                if fpath.name not in ['torch_model.pt', 'dev_metrics.csv'] and fpath.is_file():
+                    shutil.copyfile(fpath, Path(seed_path, fpath.name))

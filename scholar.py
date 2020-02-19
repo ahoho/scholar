@@ -495,7 +495,7 @@ class torchScholar(nn.Module):
         deviation_covar_idx = 0
         for emb_name, embedding in self.embeddings_x.items():
             mapped_embeddings = torch.mm(X, embedding.T)
-            if 'background' == emb:
+            if 'background' == emb_name:
                 en0_x.append(mapped_embeddings)
             else:
                 deviation_covar = PC[:, deviation_covar_idx].view(-1, 1)

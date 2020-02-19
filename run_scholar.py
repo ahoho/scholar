@@ -218,7 +218,7 @@ def main(call=None):
     )
     parser.add_argument(
         "--fix-deviation-embeddings",
-        dest="update_partisan_embeddings",
+        dest="update_deviation_embeddings",
         action="store_false",
         default=True,
     )
@@ -317,12 +317,7 @@ def main(call=None):
 
     if n_labels > 0:
         print("Train label proportions:", np.mean(train_labels, axis=0))
-        
-    # get the cosponsor data
-    cosponsor_data = pd.read_csv(
-        os.path.join(input_dir, "cosponsor_data.csv"), index_col=0
-    )
-
+    
     # split into training and dev if desired
     train_indices, dev_indices = train_dev_split(options, rng)
     train_X, dev_X = split_matrix(train_X, train_indices, dev_indices)
@@ -410,17 +405,19 @@ def main(call=None):
         train_prior_covars, _, deviation_covar_names, _ = load_labels(
             input_dir, options.train_prefix, train_row_selector, deviation_covar
         )
-        dev_prior_covars, _, _, _ = load_labels(
-            input_dir, options.dev_prefix, dev_row_selector, deviation_covar
-        )
-        test_prior_covars, _, _, _ = load_labels(
-            input_dir, options.test_prefix, test_row_selector, deviation_covar
-        )
+        if options.dev_prefix is not None:
+            dev_prior_covars, _, _, _ = load_labels(
+                input_dir, options.dev_prefix, dev_row_selector, deviation_covar
+            )
+        if options.test_prefix is not None:
+            test_prior_covars, _, _, _ = load_labels(
+                input_dir, options.test_prefix, test_row_selector, deviation_covar
+            )
         # experimental baseline setting
         if options.ignore_deviation_embeddings:
-            train_prior_covars[:] = 1.
-            dev_prior_covars[:] = 1.
-            test_prior_covars[:] = 1.
+            train_prior_covars = np.ones_like(train_prior_covars)
+            dev_prior_covars = np.ones_like(dev_prior_covars)
+            test_prior_covars = np.ones_like(test_prior_covars) 
 
 
     # initialize the background using overall word frequencies
@@ -657,7 +654,6 @@ def load_word_counts(input_dir, input_prefix, vocab=None):
 
 
 def load_labels(input_dir, input_prefix, row_selector, labels=None):
-    labels = None
     label_type = None
     label_names = None
     n_labels = 0
