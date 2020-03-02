@@ -21,6 +21,7 @@ class Scholar(object):
         seed=None,
         classify_from_covars=True,
         classify_from_topics=True,
+        classify_from_doc_reps=True,
     ):
 
         """
@@ -76,6 +77,7 @@ class Scholar(object):
             device=self.device,
             classify_from_covars=classify_from_covars,
             classify_from_topics=classify_from_topics,
+            classify_from_doc_reps=classify_from_doc_reps,
         ).to(self.device)
 
         # set the criterion
@@ -93,6 +95,7 @@ class Scholar(object):
         Y,
         PC,
         TC,
+        DR,
         eta_bn_prop=1.0,
         l1_beta=None,
         l1_beta_c=None,
@@ -104,6 +107,7 @@ class Scholar(object):
         :param Y: np.array of labels [batch size x n_labels]
         :param PC: np.array of prior covariates influencing the document-topic prior [batch size x n_prior_covars]
         :param TC: np.array of topic covariates to be associated with topical deviations [batch size x n_topic_covars]
+        :param DR: np.array of document representations [batch size x doc_dim]
         :param l1_beta: np.array of prior variances on the topic weights
         :param l1_beta_c: np.array of prior variances on the weights for topic covariates
         :param l1_beta_ci: np.array of prior variances on the weights for topic-covariate interactions
@@ -117,6 +121,8 @@ class Scholar(object):
             PC = torch.Tensor(PC).to(self.device)
         if TC is not None:
             TC = torch.Tensor(TC).to(self.device)
+        if DR is not None:
+            DR = torch.Tensor(DR).to(self.device)
         self.optimizer.zero_grad()
 
         # do a forward pass
@@ -125,6 +131,7 @@ class Scholar(object):
             Y,
             PC,
             TC,
+            DR,
             eta_bn_prop=eta_bn_prop,
             l1_beta=l1_beta,
             l1_beta_c=l1_beta_c,
@@ -145,7 +152,7 @@ class Scholar(object):
             kld.to("cpu").detach().numpy(),
         )
 
-    def predict(self, X, PC, TC, eta_bn_prop=0.0):
+    def predict(self, X, PC, TC, DR, eta_bn_prop=0.0):
         """
         Predict labels for a minibatch of data
         """
@@ -160,12 +167,14 @@ class Scholar(object):
             PC = torch.Tensor(PC).to(self.device)
         if TC is not None:
             TC = torch.Tensor(TC).to(self.device)
+        if DR is not None:
+            DR = torch.Tensor(DR).to(self.device)
         theta, _, Y_recon, _ = self._model(
-            X, Y, PC, TC, do_average=False, var_scale=0.0, eta_bn_prop=eta_bn_prop
+            X, Y, PC, TC, DR, do_average=False, var_scale=0.0, eta_bn_prop=eta_bn_prop
         )
         return theta, Y_recon.to("cpu").detach().numpy()
 
-    def predict_from_topics(self, theta, PC, TC, eta_bn_prop=0.0):
+    def predict_from_topics(self, theta, PC, TC, DR, eta_bn_prop=0.0):
         """
         Predict label probabilities from each topic
         """
@@ -174,10 +183,12 @@ class Scholar(object):
             PC = torch.Tensor(PC)
         if TC is not None:
             TC = torch.Tensor(TC)
-        probs = self._model.predict_from_theta(theta, PC, TC)
+        if DR is not None:
+            DR = torch.Tensor(DR)
+        probs = self._model.predict_from_theta(theta, PC, TC, DR)
         return probs.to("cpu").detach().numpy()
 
-    def get_losses(self, X, Y, PC, TC, eta_bn_prop=0.0, n_samples=0):
+    def get_losses(self, X, Y, PC, TC, DR, eta_bn_prop=0.0, n_samples=0):
         """
         Compute and return the loss values for all instances in X, Y, PC, and TC averaged over multiple samples
         """
@@ -190,6 +201,8 @@ class Scholar(object):
             PC = np.expand_dims(PC, axis=0)
         if TC is not None and batch_size == 1:
             TC = np.expand_dims(TC, axis=0)
+        if DR is not None and batch_size == 1:
+            DR = np.expand_dims(DR, axis=0)
         X = torch.Tensor(X).to(self.device)
         if Y is not None:
             Y = torch.Tensor(Y).to(self.device)
@@ -197,15 +210,17 @@ class Scholar(object):
             PC = torch.Tensor(PC).to(self.device)
         if TC is not None:
             TC = torch.Tensor(TC).to(self.device)
+        if DR is not None:
+            DR = torch.Tensor(DR).to(self.device)
         if n_samples == 0:
             _, _, _, temp = self._model(
-                X, Y, PC, TC, do_average=False, var_scale=0.0, eta_bn_prop=eta_bn_prop
+                X, Y, PC, TC, DR, do_average=False, var_scale=0.0, eta_bn_prop=eta_bn_prop
             )
             loss, NL, KLD = temp
             losses = loss.to("cpu").detach().numpy()
         else:
             _, _, _, temp = self._model(
-                X, Y, PC, TC, do_average=False, var_scale=1.0, eta_bn_prop=eta_bn_prop
+                X, Y, PC, TC, DR, do_average=False, var_scale=1.0, eta_bn_prop=eta_bn_prop
             )
             loss, NL, KLD = temp
             losses = loss.to("cpu").detach().numpy()
@@ -215,6 +230,7 @@ class Scholar(object):
                     Y,
                     PC,
                     TC,
+                    DR,
                     do_average=False,
                     var_scale=1.0,
                     eta_bn_prop=eta_bn_prop,
@@ -225,7 +241,7 @@ class Scholar(object):
 
         return losses
 
-    def compute_theta(self, X, Y, PC, TC, eta_bn_prop=0.0):
+    def compute_theta(self, X, Y, PC, TC, DR, eta_bn_prop=0.0):
         """
         Return the latent document representation (mean of posterior of theta) for a given batch of X, Y, PC, and TC
         """
@@ -238,6 +254,8 @@ class Scholar(object):
             PC = np.expand_dims(PC, axis=0)
         if TC is not None and batch_size == 1:
             TC = np.expand_dims(TC, axis=0)
+        if DR is not None and batch_size == 1:
+            DR = np.expand_dims(DR, axis=0)
 
         X = torch.Tensor(X).to(self.device)
         if Y is not None:
@@ -246,8 +264,10 @@ class Scholar(object):
             PC = torch.Tensor(PC).to(self.device)
         if TC is not None:
             TC = torch.Tensor(TC).to(self.device)
+        if DR is not None:
+            DR = torch.Tensor(DR).to(self.device)
         theta, _, _, _ = self._model(
-            X, Y, PC, TC, do_average=False, var_scale=0.0, eta_bn_prop=eta_bn_prop
+            X, Y, PC, TC, DR, do_average=False, var_scale=0.0, eta_bn_prop=eta_bn_prop
         )
 
         return theta.to("cpu").detach().numpy()
@@ -321,12 +341,14 @@ class torchScholar(nn.Module):
         device="cpu",
         classify_from_covars=True,
         classify_from_topics=True,
+        classify_from_doc_reps=True,
     ):
         super(torchScholar, self).__init__()
 
         # load the configuration
         self.vocab_size = config["vocab_size"]
         self.words_emb_dim = config["embedding_dim"]
+        self.doc_reps_dim = config["doc_reps_dim"]
         self.n_topics = config["n_topics"]
         self.n_labels = config["n_labels"]
         self.n_prior_covars = config["n_prior_covars"]
@@ -341,6 +363,7 @@ class torchScholar(nn.Module):
         self.device = device
         self.classify_from_covars = classify_from_covars
         self.classify_from_topics = classify_from_topics
+        self.classify_from_doc_reps = classify_from_doc_reps
 
         # create a layer for prior covariates to influence the document prior
         if self.n_prior_covars > 0:
@@ -363,6 +386,10 @@ class torchScholar(nn.Module):
             emb_size += self.n_topic_covars
             if self.classify_from_covars:
                 classifier_input_dim += self.n_topic_covars
+        if self.doc_reps_dim is not None:
+            emb_size += self.doc_reps_dim
+            if self.classify_from_doc_reps:
+                classifier_input_dim += self.doc_reps_dim
         if self.n_labels > 0:
             emb_size += self.n_labels
 
@@ -467,6 +494,7 @@ class torchScholar(nn.Module):
         Y,
         PC,
         TC,
+        DR,
         compute_loss=True,
         do_average=True,
         eta_bn_prop=1.0,
@@ -481,6 +509,7 @@ class torchScholar(nn.Module):
         :param Y: np.array of labels [batch_size x n_classes]
         :param PC: np.array of covariates influencing the prior [batch_size x n_prior_covars]
         :param TC: np.array of covariates with explicit topic deviations [batch_size x n_topic_covariates]
+        :param DR: np.array of document representations [batch_size x doc_reps_dim]
         :param compute_loss: if True, compute and return the loss
         :param do_average: if True, average the loss over the minibatch
         :param eta_bn_prop: (float) a weight between 0 and 1 to interpolate between using and not using the final batchnorm layer
@@ -510,6 +539,8 @@ class torchScholar(nn.Module):
             encoder_parts.append(PC)
         if self.n_topic_covars > 0:
             encoder_parts.append(TC)
+        if self.doc_reps_dim is not None:
+            encoder_parts.append(DR)
         if self.n_labels > 0:
             encoder_parts.append(Y)
 
@@ -581,6 +612,8 @@ class torchScholar(nn.Module):
                     classifier_inputs.append(PC)
                 if self.n_topic_covars > 0:
                     classifier_inputs.append(TC)
+            if self.classify_from_doc_reps:
+                classifier_inputs.append(DR)
 
             if len(classifier_inputs) > 1:
                 classifier_input = torch.cat(classifier_inputs, dim=1).to(self.device)
@@ -705,7 +738,7 @@ class torchScholar(nn.Module):
         else:
             return loss, NL, KLD
 
-    def predict_from_theta(self, theta, PC, TC):
+    def predict_from_theta(self, theta, PC, TC, DR):
         # Predict labels from a distribution over topics
         Y_recon = None
         if self.n_labels > 0:
@@ -718,6 +751,9 @@ class torchScholar(nn.Module):
                     classifier_inputs.append(PC)
                 if self.n_topic_covars > 0:
                     classifier_inputs.append(TC)
+            if self.classify_from_doc_reps:
+                classifier_inputs.append(DR)
+            
             if len(classifier_inputs) > 1:
                 classifier_input = torch.cat(classifier_inputs, dim=1).to(self.device)
             else:

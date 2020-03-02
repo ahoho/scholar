@@ -228,7 +228,16 @@ def main(call=None):
         default=False,
         help="Experimental baseline to maintain parameter number",
     )
-    
+
+    parser.add_argument(
+        "--doc-reps-dir",
+        help="Use document representations",
+    )
+    parser.add_argument(
+        "--classify-from-doc-reps",
+        action="store_true",
+        help="Use document representations to classify?"
+    )
 
     parser.add_argument(
         "--alpha",
@@ -312,6 +321,9 @@ def main(call=None):
         options.topic_covars,
         options.min_topic_covar_count,
     )
+    train_doc_reps = load_doc_reps(
+        options.doc_reps_dir, options.train_prefix, train_row_selector
+    )
     options.n_train, vocab_size = train_X.shape
     options.n_labels = n_labels
 
@@ -328,12 +340,16 @@ def main(call=None):
     train_topic_covars, dev_topic_covars = split_matrix(
         train_topic_covars, train_indices, dev_indices
     )
+    train_doc_reps, dev_doc_reps = split_matrix(
+        train_doc_reps, train_indices, dev_indices
+    )
     if dev_indices is not None:
         dev_ids = [train_ids[i] for i in dev_indices]
         train_ids = [train_ids[i] for i in train_indices]
     else:
         dev_ids = None
     
+    doc_reps_dim = train_doc_reps.shape[1] if options.doc_reps_dir else None
     n_train, _ = train_X.shape
 
     # load the dev data
@@ -358,6 +374,7 @@ def main(call=None):
             options.topic_covars,
             covariate_selector=topic_covar_selector,
         )
+        dev_doc_reps = load_doc_reps(options.doc_reps_dir, options.dev_prefix, dev_row_selector)
 
     # load the test data
     test_ids = None
@@ -382,6 +399,9 @@ def main(call=None):
             options.topic_covars,
             covariate_selector=topic_covar_selector,
         )
+        test_doc_reps = load_doc_reps(
+            options.doc_reps_dir, options.test_prefix, test_row_selector
+        )
         n_test, _ = test_X.shape
 
     else:
@@ -390,6 +410,7 @@ def main(call=None):
         test_labels = None
         test_prior_covars = None
         test_topic_covars = None
+        test_doc_reps = None
 
 
     # collect label data for the deviations
@@ -400,6 +421,7 @@ def main(call=None):
         # hijack the unused `prior_covars` by storing deviation covar data in these objects
         # luckily all checks are performed on `n_prior_covars`, which is 0
         # but the data still get passed around
+        # TODO: does this logic all already happen above?
 
         deviation_covar = options.deviation_embedding_covar
         train_prior_covars, _, deviation_covar_names, _ = load_labels(
@@ -427,7 +449,13 @@ def main(call=None):
 
     # combine the network configuration parameters into a dictionary
     network_architecture = make_network(
-        options, vocab_size, label_type, n_labels, n_prior_covars, n_topic_covars
+        options=options,
+        vocab_size=vocab_size,
+        label_type=label_type,
+        n_labels=n_labels,
+        n_prior_covars=n_prior_covars,
+        n_topic_covars=n_topic_covars,
+        doc_reps_dim=doc_reps_dim,
     )
 
     print("Network architecture:")
@@ -476,6 +504,7 @@ def main(call=None):
             seed=seed,
             classify_from_covars=options.covars_predict,
             classify_from_topics=options.topics_predict,
+            classify_from_doc_reps=options.classify_from_doc_reps,
         )
 
     # make output directory
@@ -492,6 +521,7 @@ def main(call=None):
             Y=train_labels,
             PC=train_prior_covars,
             TC=train_topic_covars,
+            DR=train_doc_reps,
             vocab=vocab,
             prior_covar_names=prior_covar_names,
             topic_covar_names=topic_covar_names,
@@ -504,6 +534,7 @@ def main(call=None):
             Y_dev=dev_labels,
             PC_dev=dev_prior_covars,
             TC_dev=dev_topic_covars,
+            DR_dev=dev_doc_reps,
         )
 
     # load best model
@@ -525,6 +556,7 @@ def main(call=None):
             dev_labels,
             dev_prior_covars,
             dev_topic_covars,
+            dev_doc_reps,
             options.batch_size,
             eta_bn_prop=0.0,
         )
@@ -540,6 +572,7 @@ def main(call=None):
             test_labels,
             test_prior_covars,
             test_topic_covars,
+            test_doc_reps,
             options.batch_size,
             eta_bn_prop=0.0,
         )
@@ -557,6 +590,7 @@ def main(call=None):
             train_labels,
             train_prior_covars,
             train_topic_covars,
+            train_doc_reps,
             options.output_dir,
             subset="train",
         )
@@ -568,6 +602,7 @@ def main(call=None):
                 dev_labels,
                 dev_prior_covars,
                 dev_topic_covars,
+                dev_doc_reps,
                 options.output_dir,
                 subset="dev",
             )
@@ -579,6 +614,7 @@ def main(call=None):
                 test_labels,
                 test_prior_covars,
                 test_topic_covars,
+                test_doc_reps,
                 options.output_dir,
                 subset="test",
             )
@@ -586,7 +622,11 @@ def main(call=None):
     # print label probabilities for each topic
     if n_labels > 0:
         print_topic_label_associations(
-            options, label_names, model, n_prior_covars, n_topic_covars
+            options,
+            label_names,
+            model,
+            n_prior_covars,
+            n_topic_covars,
         )
 
     # save document representations
@@ -597,6 +637,7 @@ def main(call=None):
         train_labels,
         train_prior_covars,
         train_topic_covars,
+        train_doc_reps,
         train_ids,
         options.output_dir,
         "train",
@@ -610,6 +651,7 @@ def main(call=None):
             dev_labels,
             dev_prior_covars,
             dev_topic_covars,
+            dev_doc_reps,
             dev_ids,
             options.output_dir,
             "dev",
@@ -623,6 +665,7 @@ def main(call=None):
             test_labels,
             test_prior_covars,
             test_topic_covars,
+            test_doc_reps,
             test_ids,
             options.output_dir,
             "test",
@@ -742,6 +785,16 @@ def load_covariates(
     return covariates, covariate_selector, covariate_names, n_covariates
 
 
+def load_doc_reps(input_dir, prefix, row_selector):
+    """
+    Load document representations, an [num_docs x doc_dim] matrix
+    """
+    if input_dir is not None:
+        input_fpath = os.path.join(input_dir, f"{prefix}.npy")
+        doc_reps = np.load(input_fpath)
+        return doc_reps[row_selector, :]
+
+
 def train_dev_split(options, rng):
     # randomly split into train and dev
     if options.dev_folds > 0:
@@ -819,11 +872,18 @@ def load_word_vectors(fpath, emb_dim, update_embeddings, rng, vocab):
 
 
 def make_network(
-    options, vocab_size, label_type=None, n_labels=0, n_prior_covars=0, n_topic_covars=0
+    options,
+    vocab_size,
+    doc_reps_dim=None,
+    label_type=None,
+    n_labels=0,
+    n_prior_covars=0,
+    n_topic_covars=0,
 ):
     # Assemble the network configuration parameters into a dictionary
     network_architecture = dict(
         embedding_dim=options.emb_dim,
+        doc_reps_dim=doc_reps_dim,
         n_topics=options.n_topics,
         vocab_size=vocab_size,
         label_type=label_type,
@@ -849,6 +909,7 @@ def train(
     Y,
     PC,
     TC,
+    DR,
     vocab,
     prior_covar_names,
     topic_covar_names,
@@ -861,6 +922,7 @@ def train(
     Y_dev=None,
     PC_dev=None,
     TC_dev=None,
+    DR_dev=None,
     bn_anneal=True,
     init_eta_bn_prop=1.0,
     rng=None,
@@ -868,7 +930,7 @@ def train(
 ):
     # Train the model
     n_train, vocab_size = X.shape
-    mb_gen = create_minibatch(X, Y, PC, TC, batch_size=batch_size, rng=rng)
+    mb_gen = create_minibatch(X, Y, PC, TC, DR, batch_size=batch_size, rng=rng)
     total_batch = int(n_train / batch_size)
     batches = 0
 
@@ -926,13 +988,14 @@ def train(
         # Loop over all batches
         for i in tqdm(range(total_batch)):
             # get a minibatch
-            batch_xs, batch_ys, batch_pcs, batch_tcs = next(mb_gen)
+            batch_xs, batch_ys, batch_pcs, batch_tcs, batch_drs = next(mb_gen)
             # do one minibatch update
             cost, recon_y, thetas, nl, kld = model.fit(
                 batch_xs,
                 batch_ys,
                 batch_pcs,
                 batch_tcs,
+                batch_drs,
                 eta_bn_prop=eta_bn_prop,
                 l1_beta=l1_beta,
                 l1_beta_c=l1_beta_c,
@@ -1010,6 +1073,7 @@ def train(
                     Y_dev,
                     PC_dev,
                     TC_dev,
+                    DR_dev,
                     batch_size,
                     eta_bn_prop=eta_bn_prop,
                 )
@@ -1020,7 +1084,7 @@ def train(
                 dev_accuracy = 0
                 if network_architecture["n_labels"] > 0:
                     dev_pred_probs = predict_label_probs(
-                        model, X_dev, PC_dev, TC_dev, eta_bn_prop=eta_bn_prop
+                        model, X_dev, PC_dev, TC_dev, DR_dev, eta_bn_prop=eta_bn_prop
                     )
                     dev_predictions = np.argmax(dev_pred_probs, axis=1)
                     dev_accuracy = float(
@@ -1065,7 +1129,7 @@ def train(
     return model
 
 
-def create_minibatch(X, Y, PC, TC, batch_size=200, rng=None):
+def create_minibatch(X, Y, PC, TC, DR, batch_size=200, rng=None):
     # Yield a random minibatch
     while True:
         # Return random data samples of a size 'minibatch_size' at each iteration
@@ -1091,10 +1155,16 @@ def create_minibatch(X, Y, PC, TC, batch_size=200, rng=None):
         else:
             TC_mb = None
 
-        yield X_mb, Y_mb, PC_mb, TC_mb
+        if DR is not None:
+            DR_mb = DR[ixs, :].astype("float32")
+        else:
+            DR_mb = None
 
 
-def get_minibatch(X, Y, PC, TC, batch, batch_size=200):
+        yield X_mb, Y_mb, PC_mb, TC_mb, DR_mb
+
+
+def get_minibatch(X, Y, PC, TC, DR, batch, batch_size=200):
     # Get a particular non-random segment of the data
     n_items, _ = X.shape
     n_batches = int(np.ceil(n_items / float(batch_size)))
@@ -1121,7 +1191,12 @@ def get_minibatch(X, Y, PC, TC, batch, batch_size=200):
     else:
         TC_mb = None
 
-    return X_mb, Y_mb, PC_mb, TC_mb
+    if DR is not None:
+       DR_mb = DR[ixs, :].astype("float32")
+    else:
+        DR_mb = None    
+
+    return X_mb, Y_mb, PC_mb, TC_mb, DR_mb
 
 
 def update_metrics(current, best=None, epoch=None):
@@ -1147,7 +1222,7 @@ def update_metrics(current, best=None, epoch=None):
     return best
 
 
-def predict_label_probs(model, X, PC, TC, batch_size=200, eta_bn_prop=0.0):
+def predict_label_probs(model, X, PC, TC, DR, batch_size=200, eta_bn_prop=0.0):
     # Predict a probability distribution over labels for each instance using the classifier part of the network
 
     n_items, _ = X.shape
@@ -1156,11 +1231,11 @@ def predict_label_probs(model, X, PC, TC, batch_size=200, eta_bn_prop=0.0):
 
     # make predictions on minibatches and then combine
     for i in range(n_batches):
-        batch_xs, batch_ys, batch_pcs, batch_tcs = get_minibatch(
-            X, None, PC, TC, i, batch_size
+        batch_xs, batch_ys, batch_pcs, batch_tcs, batch_drs = get_minibatch(
+            X, None, PC, TC, DR, i, batch_size
         )
         Z, pred_probs = model.predict(
-            batch_xs, batch_pcs, batch_tcs, eta_bn_prop=eta_bn_prop
+            batch_xs, batch_pcs, batch_tcs, batch_drs, eta_bn_prop=eta_bn_prop
         )
         pred_probs_all.append(pred_probs)
 
@@ -1307,7 +1382,7 @@ def print_top_bg(bg, feature_names, n_top_words=10):
     print(np.exp(temp[: -n_top_words - 1 : -1]))
 
 
-def evaluate_perplexity(model, X, Y, PC, TC, batch_size, eta_bn_prop=0.0):
+def evaluate_perplexity(model, X, Y, PC, TC, DR, batch_size, eta_bn_prop=0.0):
     # Evaluate the approximate perplexity on a subset of the data (using words, labels, and covariates)
     doc_sums = np.array(X.sum(axis=1), dtype=np.float32).reshape(-1)
     X = X.astype("float32")
@@ -1317,16 +1392,18 @@ def evaluate_perplexity(model, X, Y, PC, TC, batch_size, eta_bn_prop=0.0):
         PC = PC.astype("float32")
     if TC is not None:
         TC = TC.astype("float32")
+    if DR is not None:
+        DR = DR.astype("float32")
     losses = []
 
     n_items, _ = X.shape
     n_batches = int(np.ceil(n_items / batch_size))
     for i in range(n_batches):
-        batch_xs, batch_ys, batch_pcs, batch_tcs = get_minibatch(
-            X, Y, PC, TC, i, batch_size
+        batch_xs, batch_ys, batch_pcs, batch_tcs, batch_drs = get_minibatch(
+            X, Y, PC, TC, DR, i, batch_size
         )
         batch_losses = model.get_losses(
-            batch_xs, batch_ys, batch_pcs, batch_tcs, eta_bn_prop=eta_bn_prop
+            batch_xs, batch_ys, batch_pcs, batch_tcs, batch_drs, eta_bn_prop=eta_bn_prop
         )
         losses.append(batch_losses)
     losses = np.hstack(losses)
@@ -1367,10 +1444,10 @@ def generate_topics(beta, feature_names, n=100, sparsity_threshold=1e-5):
     return lines
 
 def predict_labels_and_evaluate(
-    model, X, Y, PC, TC, output_dir=None, subset="train", batch_size=200
+    model, X, Y, PC, TC, DR, output_dir=None, subset="train", batch_size=200
 ):
     # Predict labels for all instances using the classifier network and evaluate the accuracy
-    pred_probs = predict_label_probs(model, X, PC, TC, batch_size, eta_bn_prop=0.0)
+    pred_probs = predict_label_probs(model, X, PC, TC, DR, batch_size, eta_bn_prop=0.0)
     np.savez(
         os.path.join(output_dir, "pred_probs." + subset + ".npz"), pred_probs=pred_probs
     )
@@ -1421,7 +1498,7 @@ def print_topic_label_associations(
 
 
 def save_document_representations(
-    model, X, Y, PC, TC, ids, output_dir, partition, batch_size=200
+    model, X, Y, PC, TC, DR, ids, output_dir, partition, batch_size=200
 ):
     # compute the mean of the posterior of the latent representation for each documetn and save it
     if Y is not None:
@@ -1432,10 +1509,12 @@ def save_document_representations(
     thetas = []
 
     for i in range(n_batches):
-        batch_xs, batch_ys, batch_pcs, batch_tcs = get_minibatch(
-            X, Y, PC, TC, i, batch_size
+        batch_xs, batch_ys, batch_pcs, batch_tcs, batch_drs = get_minibatch(
+            X, Y, PC, TC, DR, i, batch_size
         )
-        thetas.append(model.compute_theta(batch_xs, batch_ys, batch_pcs, batch_tcs))
+        thetas.append(
+            model.compute_theta(batch_xs, batch_ys, batch_pcs, batch_tcs, batch_drs)
+        )
     theta = np.vstack(thetas)
 
     np.savez(
