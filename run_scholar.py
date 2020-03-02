@@ -511,7 +511,7 @@ def main(call=None):
     if not options.save_at_training_end and os.path.exists(model_fpath):
         model, _ = load_scholar_model(model_fpath, embeddings)
         model.eval()
-    else:
+    elif options.epochs > 0:
         save_scholar_model(options, model, epoch=options.epochs, is_final=True)
         model.eval()
     # display and save weights
@@ -1473,11 +1473,11 @@ def save_scholar_model(options, model, epoch=0, dev_metrics={}, is_final=False):
     )
 
 
-def load_scholar_model(inpath, embeddings=None):
+def load_scholar_model(inpath, embeddings=None, map_location=None):
     """
     Load the Scholar model
     """
-    checkpoint = torch.load(inpath)
+    checkpoint = torch.load(inpath, map_location=map_location)
     scholar_kwargs = checkpoint["scholar_kwargs"]
     scholar_kwargs["init_embeddings"] = embeddings
 
