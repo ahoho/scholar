@@ -106,7 +106,8 @@ output*
 tutorial
 congress_votes*
 google_secret.json
-bills*
+bills
+vote-prediction
 
 # IntelliJ
 *.iml
