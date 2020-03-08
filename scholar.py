@@ -122,7 +122,7 @@ class Scholar(object):
         if TC is not None:
             TC = torch.Tensor(TC).to(self.device)
         if DR is not None:
-            DR = torch.Tensor(DR).to(self.device)
+            DR = torch.Tensor(DR).to(self.device) * X.sum(1, keepdims=True)
         self.optimizer.zero_grad()
 
         # do a forward pass
@@ -348,7 +348,10 @@ class torchScholar(nn.Module):
         # load the configuration
         self.vocab_size = config["vocab_size"]
         self.words_emb_dim = config["embedding_dim"]
+        self.zero_out_embeddings = config["zero_out_embeddings"]
         self.doc_reps_dim = config["doc_reps_dim"]
+        self.doc_reconstruction_weight = config["doc_reconstruction_weight"]
+        self.use_doc_layer = config["use_doc_layer"]
         self.n_topics = config["n_topics"]
         self.n_labels = config["n_labels"]
         self.n_prior_covars = config["n_prior_covars"]
@@ -387,7 +390,13 @@ class torchScholar(nn.Module):
             if self.classify_from_covars:
                 classifier_input_dim += self.n_topic_covars
         if self.doc_reps_dim is not None:
-            emb_size += self.doc_reps_dim
+            if self.use_doc_layer:
+                emb_size += self.words_emb_dim
+                self.doc_layer = nn.Linear(
+                    self.doc_reps_dim, self.words_emb_dim
+                ).to(self.device)
+            else:
+                emb_size += self.doc_reps_dim
             if self.classify_from_doc_reps:
                 classifier_input_dim += self.doc_reps_dim
         if self.n_labels > 0:
@@ -450,6 +459,16 @@ class torchScholar(nn.Module):
                 self.beta_ci_layer = nn.Linear(
                     self.n_topics * self.n_topic_covars, self.vocab_size, bias=False
                 ).to(self.device)
+
+        # create the document representation reconstructor
+        if self.doc_reconstruction_weight:
+            # reconstruct with the logits over words, theta @ beta
+            self.doc_recon_layer_0 = nn.Linear(
+                self.vocab_size, self.doc_reps_dim
+            ).to(self.device)
+            self.doc_recon_layer_1 = nn.Linear(
+                self.doc_reps_dim, self.doc_reps_dim
+            ).to(self.device)
 
         # create the classifier
         if self.n_labels > 0:
@@ -530,8 +549,9 @@ class torchScholar(nn.Module):
                 deviation_covar = PC[:, deviation_covar_idx].view(-1, 1)
                 en0_x.append(mapped_embeddings * deviation_covar)
                 deviation_covar_idx += 1
-        
         en0_x = torch.stack(en0_x).mean(0)
+        if self.zero_out_embeddings:
+            en0_x = en0_x * 0
         encoder_parts = [en0_x]
         
         # append additional components to the encoder, if given
@@ -540,7 +560,11 @@ class torchScholar(nn.Module):
         if self.n_topic_covars > 0:
             encoder_parts.append(TC)
         if self.doc_reps_dim is not None:
-            encoder_parts.append(DR)
+            dr_out = DR
+            if self.use_doc_layer:
+                dr_out = F.softplus(self.doc_layer(dr_out))
+            
+            encoder_parts.append(dr_out)
         if self.n_labels > 0:
             encoder_parts.append(Y)
 
@@ -600,6 +624,14 @@ class torchScholar(nn.Module):
         X_recon_no_bn = F.softmax(eta, dim=1)
         X_recon = eta_bn_prop * X_recon_bn + (1.0 - eta_bn_prop) * X_recon_no_bn
 
+        # reconstruct the document representation
+        dr_recon = None
+        if self.doc_reconstruction_weight:
+            eta_interp = eta_bn_prop * eta_bn + (1.0 - eta_bn_prop) * eta
+            dr_recon0 = self.doc_recon_layer_0(eta_interp)
+            dr_recon0_sp = F.softplus(dr_recon0)
+            dr_recon = self.doc_recon_layer_1(dr_recon0_sp)
+
         # predict labels
         Y_recon = None
         if self.n_labels > 0:
@@ -650,8 +682,10 @@ class torchScholar(nn.Module):
                 self._loss(
                     X,
                     Y,
+                    DR,
                     X_recon,
                     Y_recon,
+                    dr_recon,
                     prior_mean,
                     prior_logvar,
                     posterior_mean_bn,
@@ -669,8 +703,10 @@ class torchScholar(nn.Module):
         self,
         X,
         Y,
+        DR,
         X_recon,
         Y_recon,
+        dr_recon,
         prior_mean,
         prior_logvar,
         posterior_mean,
@@ -683,10 +719,16 @@ class torchScholar(nn.Module):
 
         # compute reconstruction loss
         NL = -(X * (X_recon + 1e-10).log()).sum(1)
+
+        # compute DR reconstruction loss
+        if self.doc_reconstruction_weight:
+            dr_recon_loss = F.mse_loss(DR, dr_recon) * self.doc_reconstruction_weight
+            NL += dr_recon_loss
+        
         # compute label loss
         if self.n_labels > 0:
             NL += -(Y * (Y_recon + 1e-10).log()).sum(1) * self.classifier_loss_weight
-
+        
         # compute KLD
         prior_var = prior_logvar.exp()
         posterior_var = posterior_logvar.exp()

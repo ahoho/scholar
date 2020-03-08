@@ -13,6 +13,7 @@ if __name__ == "__main__":
     run_parser.add_argument("--runs", default=1, type=int)
     run_parser.add_argument("--global-seed", type=int)
     run_parser.add_argument("--store-all", default=False, action='store_true')
+    run_parser.add_argument("--dev-folds", type=int)
     run_args, additional_args = run_parser.parse_known_args()
 
     outdir_parser = argparse.ArgumentParser()
@@ -23,7 +24,14 @@ if __name__ == "__main__":
 
     for run in range(run_args.runs):
         print(f"On run {run}")
-        seed = np.random.randint(0, 1000000)
+        if run_args.dev_folds:
+            fold = run % run_args.dev_folds
+            if fold == 0:
+                seed = np.random.randint(0, 1000000) # renew seed
+            additional_args += ["--dev-fold", f"{fold}", "--dev-folds", f"{run_args.dev_folds}"] 
+        else:
+            fold = None
+            seed = np.random.randint(0, 1000000)
         additional_args += ['--seed', f'{seed}']
         
         # run scholar
@@ -40,6 +48,7 @@ if __name__ == "__main__":
         ppl, npmi, acc = m['perplexity'], m['npmi'], m['accuracy']
         results = pd.DataFrame({
                'seed': seed,
+               'fold': fold, 
                'perplexity_value': float(ppl['value']),
                'perplexity_epoch': int(ppl.get('epoch', 0)),
 

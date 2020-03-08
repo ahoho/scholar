@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 import file_handling as fh
 from scholar import Scholar
-from compute_npmi import compute_npmi_at_n
+from compute_npmi import compute_npmi_at_n_during_training
 
 
 def main(call=None):
@@ -60,6 +60,12 @@ def main(call=None):
         type=str,
         default="perplexity",  # TODO: constrain options
         help="Optimize accuracy, perplexity, or internal npmi",
+    )
+    parser.add_argument(
+        "--npmi-words",
+        type=int,
+        default=10,
+        help="Number of words to use when calculating npmi"
     )
     parser.add_argument(
         "--train-prefix",
@@ -228,10 +234,27 @@ def main(call=None):
         default=False,
         help="Experimental baseline to maintain parameter number",
     )
+    parser.add_argument(
+        "--zero-out-embeddings",
+        action="store_true",
+        default=False,
+        help="Experimental switch to set all embeddings to 0",
+    )
 
     parser.add_argument(
         "--doc-reps-dir",
-        help="Use document representations",
+        help="Use document representation & specify the location",
+    )
+    parser.add_argument(
+        "--doc-reconstruction-weight",
+        type=float,
+        help="How much to weigh doc repesentation reconstruction (0 means none)",
+    )
+    parser.add_argument(
+        "--use-doc-layer",
+        action="store_true",
+        default=False,
+        help="Use a document projection layer",
     )
     parser.add_argument(
         "--classify-from-doc-reps",
@@ -321,6 +344,8 @@ def main(call=None):
         options.topic_covars,
         options.min_topic_covar_count,
     )
+
+    print("Loading document representations")
     train_doc_reps = load_doc_reps(
         options.doc_reps_dir, options.train_prefix, train_row_selector
     )
@@ -883,7 +908,10 @@ def make_network(
     # Assemble the network configuration parameters into a dictionary
     network_architecture = dict(
         embedding_dim=options.emb_dim,
+        zero_out_embeddings=options.zero_out_embeddings,
         doc_reps_dim=doc_reps_dim,
+        use_doc_layer=options.use_doc_layer,
+        doc_reconstruction_weight=options.doc_reconstruction_weight,
         n_topics=options.n_topics,
         vocab_size=vocab_size,
         label_type=label_type,
@@ -1093,9 +1121,8 @@ def train(
                     epoch_metrics["accuracy"] = dev_accuracy
 
                 # NPMI
-                topics = generate_topics(model.get_weights(), vocab, n=10)
-                dev_npmi = compute_npmi_at_n(
-                    topics, vocab, ref_counts=X_dev.tocsc(), n=10, silent=True
+                dev_npmi = compute_npmi_at_n_during_training(
+                    model.get_weights(), ref_counts=X_dev.tocsc(), n=options.npmi_words
                 )
                 epoch_metrics["npmi"] = dev_npmi
 

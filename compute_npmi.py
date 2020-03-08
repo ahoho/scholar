@@ -52,7 +52,9 @@ def compute_npmi(topics_file, ref_vocab, ref_counts, n_vals, cols_to_skip=0, out
         fh.write_list_to_text(lines, output_file)
 
 
-def compute_npmi_at_n(topics, ref_vocab, ref_counts, n=10, cols_to_skip=0, silent=False):
+def compute_npmi_at_n(
+    topics, ref_vocab, ref_counts, n=10, cols_to_skip=0, silent=False, return_mean=True
+):
 
     vocab_index = dict(zip(ref_vocab, range(len(ref_vocab))))
     n_docs, _ = ref_counts.shape
@@ -89,8 +91,10 @@ def compute_npmi_at_n(topics, ref_vocab, ref_counts, n=10, cols_to_skip=0, silen
         npmi_means.append(np.mean(npmi_vals))
     if not silent:
         print(np.mean(npmi_means))
-    return np.mean(npmi_means)
-
+    if return_mean:
+        return np.mean(npmi_means)
+    else:
+        return np.array(npmi_means)
 
 def compute_npmi_at_n_during_training(beta, ref_counts, n=10, smoothing=0.01):
 
