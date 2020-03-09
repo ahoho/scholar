@@ -107,6 +107,7 @@ tutorial
 congress_votes*
 google_secret.json
 bills*
+imdb*
 
 # IntelliJ
 *.iml
