@@ -122,7 +122,7 @@ class Scholar(object):
         if TC is not None:
             TC = torch.Tensor(TC).to(self.device)
         if DR is not None:
-            DR = torch.Tensor(DR).to(self.device) * X.sum(1, keepdims=True)
+            DR = torch.Tensor(DR).to(self.device)
         self.optimizer.zero_grad()
 
         # do a forward pass
@@ -350,8 +350,9 @@ class torchScholar(nn.Module):
         self.words_emb_dim = config["embedding_dim"]
         self.zero_out_embeddings = config["zero_out_embeddings"]
         self.doc_reps_dim = config["doc_reps_dim"]
-        self.doc_reconstruction_weight = config["doc_reconstruction_weight"]
+        self.attend_over_doc_reps = config["attend_over_doc_reps"]
         self.use_doc_layer = config["use_doc_layer"]
+        self.doc_reconstruction_weight = config["doc_reconstruction_weight"]
         self.n_topics = config["n_topics"]
         self.n_labels = config["n_labels"]
         self.n_prior_covars = config["n_prior_covars"]
@@ -390,6 +391,10 @@ class torchScholar(nn.Module):
             if self.classify_from_covars:
                 classifier_input_dim += self.n_topic_covars
         if self.doc_reps_dim is not None:
+            if self.attend_over_doc_reps:
+                self.attention_vec = torch.nn.Parameter(
+                    torch.rand(self.doc_reps_dim)
+                ).to(self.device)
             if self.use_doc_layer:
                 emb_size += self.words_emb_dim
                 self.doc_layer = nn.Linear(
@@ -561,6 +566,15 @@ class torchScholar(nn.Module):
             encoder_parts.append(TC)
         if self.doc_reps_dim is not None:
             dr_out = DR
+
+            if self.attend_over_doc_reps:
+                mask = dr_out[:, :, 0] == 0
+
+                # do masked softmax                
+                attn_weights = torch.matmul(dr_out, self.attention_vec)
+                attn = torch.softmax(attn_weights.masked_fill(mask, -1e32), dim=-1)
+                dr_out = (dr_out * attn.unsqueeze(-1)).sum(1) # TODO: bmm instead?
+                
             if self.use_doc_layer:
                 dr_out = F.softplus(self.doc_layer(dr_out))
             

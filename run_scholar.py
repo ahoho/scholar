@@ -251,6 +251,12 @@ def main(call=None):
         help="How much to weigh doc repesentation reconstruction (0 means none)",
     )
     parser.add_argument(
+        "--attend-over-doc-reps",
+        action="store_true",
+        default=False,
+        help="Attend over the doc-representation sequence",
+    )
+    parser.add_argument(
         "--use-doc-layer",
         action="store_true",
         default=False,
@@ -352,7 +358,10 @@ def main(call=None):
 
     print("Loading document representations")
     train_doc_reps = load_doc_reps(
-        options.doc_reps_dir, options.train_prefix, train_row_selector
+        options.doc_reps_dir,
+        prefix=options.train_prefix,
+        row_selector=train_row_selector,
+        use_sequences=options.attend_over_doc_reps,
     )
     options.n_train, vocab_size = train_X.shape
     options.n_labels = n_labels
@@ -404,7 +413,12 @@ def main(call=None):
             options.topic_covars,
             covariate_selector=topic_covar_selector,
         )
-        dev_doc_reps = load_doc_reps(options.doc_reps_dir, options.dev_prefix, dev_row_selector)
+        dev_doc_reps = load_doc_reps(
+            options.doc_reps_dir,
+            prefix=options.dev_prefix,
+            row_selector=dev_row_selector,
+            use_sequences=options.attend_over_doc_reps,
+        )
 
     # load the test data
     test_ids = None
@@ -430,7 +444,10 @@ def main(call=None):
             covariate_selector=topic_covar_selector,
         )
         test_doc_reps = load_doc_reps(
-            options.doc_reps_dir, options.test_prefix, test_row_selector
+            options.doc_reps_dir,
+            prefix=options.test_prefix,
+            row_selector=test_row_selector,
+            use_sequences=options.attend_over_doc_reps,
         )
         n_test, _ = test_X.shape
 
@@ -822,15 +839,21 @@ def load_covariates(
     return covariates, covariate_selector, covariate_names, n_covariates
 
 
-def load_doc_reps(input_dir, prefix, row_selector):
+def load_doc_reps(input_dir, prefix, row_selector, use_sequences=False):
     """
     Load document representations, an [num_docs x doc_dim] matrix
     """
     if input_dir is not None:
-        input_fpath = os.path.join(input_dir, f"{prefix}.npy")
-        doc_reps = np.load(input_fpath)
+        doc_rep_fpath = os.path.join(input_dir, f"{prefix}.npy")
+        doc_reps = np.load(doc_rep_fpath)
+        if not use_sequences:
+            return doc_reps[row_selector, :]
+        
+        tokens_fpath = os.path.join(input_dir, f"{prefix}.tokens.npy")
+        tokens = np.load(tokens_fpath)[:, :, None]
+        mask = tokens > 0
+        doc_reps = np.insert(doc_reps, [0], mask, axis=2)
         return doc_reps[row_selector, :]
-
 
 def train_dev_split(options, rng):
     # randomly split into train and dev
@@ -922,6 +945,7 @@ def make_network(
         embedding_dim=options.emb_dim,
         zero_out_embeddings=options.zero_out_embeddings,
         doc_reps_dim=doc_reps_dim,
+        attend_over_doc_reps=options.attend_over_doc_reps,
         use_doc_layer=options.use_doc_layer,
         doc_reconstruction_weight=options.doc_reconstruction_weight,
         n_topics=options.n_topics,
