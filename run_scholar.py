@@ -261,6 +261,11 @@ def main(call=None):
         action="store_true",
         help="Use document representations to classify?"
     )
+    parser.add_argument(
+        "--randomize-doc-reps",
+        action="store_true",
+        help="Baseline to randomize the document representations"
+    )
 
     parser.add_argument(
         "--alpha",
@@ -374,7 +379,7 @@ def main(call=None):
     else:
         dev_ids = None
     
-    doc_reps_dim = train_doc_reps.shape[1] if options.doc_reps_dir else None
+    doc_reps_dim = train_doc_reps.shape[-1] if options.doc_reps_dir else None
     n_train, _ = train_X.shape
 
     # load the dev data
@@ -531,6 +536,13 @@ def main(call=None):
             classify_from_topics=options.topics_predict,
             classify_from_doc_reps=options.classify_from_doc_reps,
         )
+
+    if options.randomize_doc_reps:
+        min_dr, max_dr = train_doc_reps.min(), train_doc_reps.max()
+        train_doc_reps = np.random.uniform(min_dr, max_dr, size=train_doc_reps.shape)
+        dev_doc_reps = np.random.uniform(min_dr, max_dr, size=dev_doc_reps.shape)
+        if test_doc_reps is not None:
+            test_doc_reps = np.random.uniform(min_dr, max_dr, size=test_doc_reps.shape)
 
     # make output directory
     fh.makedirs(options.output_dir)
