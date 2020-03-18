@@ -108,6 +108,7 @@ congress_votes*
 google_secret.json
 bills*
 imdb*
+20newsgroups*
 
 # IntelliJ
 *.iml
