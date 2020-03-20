@@ -348,7 +348,8 @@ class torchScholar(nn.Module):
         # load the configuration
         self.vocab_size = config["vocab_size"]
         self.words_emb_dim = config["embedding_dim"]
-        self.zero_out_embeddings = config["zero_out_embeddings"]
+        self.zero_out_embeddings = config["zero_out_embeddings"]        
+        self.reconstruct_bow = config["reconstruct_bow"]
         self.doc_reps_dim = config["doc_reps_dim"]
         self.attend_over_doc_reps = config["attend_over_doc_reps"]
         self.use_doc_layer = config["use_doc_layer"]
@@ -641,10 +642,10 @@ class torchScholar(nn.Module):
         # reconstruct the document representation
         dr_recon = None
         if self.doc_reconstruction_weight:
-            eta_interp = eta_bn_prop * eta_bn + (1.0 - eta_bn_prop) * eta
-            dr_recon0 = self.doc_recon_layer_0(eta_interp)
-            dr_recon0_sp = F.softplus(dr_recon0)
-            dr_recon = self.doc_recon_layer_1(dr_recon0_sp)
+            # eta_interp = eta_bn_prop * eta_bn + (1.0 - eta_bn_prop) * eta
+            # dr_recon0 = self.doc_recon_layer_0(eta_interp)
+            # dr_recon0_sp = F.softplus(dr_recon0)
+            dr_recon = X_recon
 
         # predict labels
         Y_recon = None
@@ -731,13 +732,19 @@ class torchScholar(nn.Module):
         l1_beta_ci=None,
     ):
 
-        # compute reconstruction loss
-        NL = -(X * (X_recon + 1e-10).log()).sum(1)
+        NL = 0.
+        # compute bag-of-words reconstruction loss
+        if self.reconstruct_bow:
+            NL += -(X * (X_recon + 1e-10).log()).sum(1)
 
-        # compute DR reconstruction loss
+        # compute document representation reconstruction loss
         if self.doc_reconstruction_weight:
-            dr_recon_loss = F.mse_loss(DR, dr_recon) * self.doc_reconstruction_weight
-            NL += dr_recon_loss
+            alpha = self.doc_reconstruction_weight
+            smoothed_x = (
+                (1 - alpha) * X 
+                + alpha * DR * X.sum(1, keepdim=True)
+            )
+            NL += -(smoothed_x * (X_recon + 1e-10).log()).sum(1)
         
         # compute label loss
         if self.n_labels > 0:

@@ -86,6 +86,13 @@ def main(call=None):
         help="Prefix of test set",
     )
     parser.add_argument(
+        "--no-bow-reconstruction-loss",
+        action="store_false",
+        dest="reconstruct_bow",
+        default=True,
+        help="Include the standard reconstruction of document word counts",
+    )
+    parser.add_argument(
         "--labels",
         type=str,
         default=None,
@@ -944,6 +951,7 @@ def make_network(
     network_architecture = dict(
         embedding_dim=options.emb_dim,
         zero_out_embeddings=options.zero_out_embeddings,
+        reconstruct_bow=options.reconstruct_bow,
         doc_reps_dim=doc_reps_dim,
         attend_over_doc_reps=options.attend_over_doc_reps,
         use_doc_layer=options.use_doc_layer,
@@ -1050,7 +1058,7 @@ def train(
         avg_nl = 0.0
         avg_kld = 0.0
         # Loop over all batches
-        for i in tqdm(range(total_batch)):
+        for i in tqdm(range(total_batch), disable=True):
             # get a minibatch
             batch_xs, batch_ys, batch_pcs, batch_tcs, batch_drs = next(mb_gen)
             # do one minibatch update
