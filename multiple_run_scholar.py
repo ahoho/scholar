@@ -1,12 +1,27 @@
 import argparse
-from pathlib import Path
 import shutil
+from pathlib import Path
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
 import torch
 
 from run_scholar import main
+import file_handling as fh
+from compute_npmi import compute_npmi_at_n
+
+def tu(topics, l=10):
+    """
+    Topic uniqueness measure from https://www.aclweb.org/anthology/P19-1640.pdf
+    """
+    tu_results = []
+    for topics_i in topics:
+        w_counts = 0
+        for w in topics_i[:l]:
+            w_counts += 1 / np.sum([w in topics_j[:l] for topics_j in topics]) # count(k, l)
+        tu_results.append((1 / l) * w_counts)
+    return tu_results
 
 if __name__ == "__main__":
     run_parser = argparse.ArgumentParser()
@@ -14,24 +29,46 @@ if __name__ == "__main__":
     run_parser.add_argument("--global-seed", type=int)
     run_parser.add_argument("--store-all", default=False, action='store_true')
     run_parser.add_argument("--dev-folds", type=int)
+    run_parser.add_argument("--npmi-words", type=int, default=10)
+    run_parser.add_argument(
+        "--ext-counts-fpath",
+        default="/fs/clip-scratch/pgoel/scholar_orig/scholar/nyt_dir/ref_counts.npz"
+    )
+    run_parser.add_argument(
+        "--ext-vocab-fpath",
+        default="/fs/clip-scratch/pgoel/scholar_orig/scholar/nyt_dir/ref_counts.vocab.json"
+    )
     run_args, additional_args = run_parser.parse_known_args()
 
     outdir_parser = argparse.ArgumentParser()
     outdir_parser.add_argument("-o")
     outdir_args, _ = outdir_parser.parse_known_args(additional_args)
+
+    nyt_counts = fh.load_sparse(run_args.ext_counts_fpath)
+    nyt_vocab = fh.read_json(run_args.ext_vocab_fpath)
     
     np.random.seed(run_args.global_seed)
+    run_seeds = iter([
+        121958, 671155, 131932, 365838, 259178, 921881, 616685, 919314, 130398,
+        5591, 11235, 2020, 19, 8000, 1001, 12345,
+    ])
+
+    if Path(outdir_args.o, "dev_metrics.csv").exists():
+        old_path = Path(outdir_args.o, "dev_metrics.csv")
+        ctime = datetime.fromtimestamp(old_path.stat().st_ctime).strftime("%Y-%m-%d")
+        new_path = Path(outdir_args.o, f"dev_metrics_{ctime}.csv")
+        Path(old_path).rename(new_path)
 
     for run in range(run_args.runs):
         print(f"On run {run}")
         if run_args.dev_folds:
             fold = run % run_args.dev_folds
             if fold == 0:
-                seed = np.random.randint(0, 1000000) # renew seed
+                seed = next(run_seeds) # renew seed
             additional_args += ["--dev-fold", f"{fold}", "--dev-folds", f"{run_args.dev_folds}"] 
         else:
             fold = None
-            seed = np.random.randint(0, 1000000)
+            seed = next(run_seeds)
         additional_args += ['--seed', f'{seed}']
         
         # run scholar
@@ -46,6 +83,9 @@ if __name__ == "__main__":
 
         m = checkpoint['dev_metrics']
         ppl, npmi, acc = m['perplexity'], m['npmi'], m['accuracy']
+        topics = fh.read_text(Path(outdir_args.o, "topics.txt"))
+
+
         results = pd.DataFrame({
                'seed': seed,
                'fold': fold, 
@@ -54,6 +94,11 @@ if __name__ == "__main__":
 
                'npmi_value': float(npmi['value']),
                'npmi_epoch': int(npmi.get('epoch', 0)),
+
+               'npmi_ext_value': compute_npmi_at_n(
+                   topics, nyt_vocab, nyt_counts, n=run_args.npmi_words, silent=True,
+                ),
+               'tu': np.mean(tu([t.strip().split() for t in topics])),
                
                'accuracy_value': float(acc['value']),
                'accuracy_epoch': int(acc.get('epoch', 0)),
