@@ -61,7 +61,7 @@ def compute_npmi_at_n(
 
     npmi_means = []
     for topic in topics:
-        words = topic.split()[cols_to_skip:]
+        words = topic.strip().split()[cols_to_skip:]
         npmi_vals = []
         for word_i, word1 in enumerate(words[:n]):
             if word1 in vocab_index:
