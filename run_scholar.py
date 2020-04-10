@@ -1166,7 +1166,7 @@ def train(
 
                 # NPMI
                 dev_npmi = compute_npmi_at_n_during_training(
-                    model.get_weights(), ref_counts=X_dev.tocsc(), n=options.npmi_words
+                    model.get_weights(), ref_counts=X_dev.tocsc(), n=options.npmi_words, smoothing=0.,
                 )
                 epoch_metrics["npmi"] = dev_npmi
 
