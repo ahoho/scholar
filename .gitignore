@@ -109,6 +109,7 @@ google_secret.json
 bills*
 imdb*
 20newsgroups*
+20ng*
 
 # IntelliJ
 *.iml
