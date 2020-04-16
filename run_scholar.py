@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 import file_handling as fh
 from scholar import Scholar
-from compute_npmi import compute_npmi_at_n_during_training
+from compute_npmi import compute_npmi_at_n_during_training, tu
 
 
 def main(call=None):
@@ -59,7 +59,7 @@ def main(call=None):
         dest="dev_metric",
         type=str,
         default="perplexity",  # TODO: constrain options
-        help="Optimize accuracy, perplexity, or internal npmi",
+        help="Optimize accuracy, perplexity, or internal npmi, or topic uniqueness (tu)",
     )
     parser.add_argument(
         "--npmi-words",
@@ -1169,11 +1169,18 @@ def train(
                     model.get_weights(), ref_counts=X_dev.tocsc(), n=options.npmi_words, smoothing=0.,
                 )
                 epoch_metrics["npmi"] = dev_npmi
+                
+                # TU
+                dev_tu = tu(
+                    model.get_weights(), l=options.npmi_words,
+                )
+                epoch_metrics["tu"] = dev_tu
 
                 print(
                     f"Dev perplexity = {dev_perplexity:0.4f}; "
                     f"Dev accuracy = {dev_accuracy:0.4f}; "
                     f"Dev NPMI = {dev_npmi:0.4f}"
+                    f"Dev TU = {dev_tu:0.4f}"
                 )
 
                 best_dev_metrics = update_metrics(epoch_metrics, best_dev_metrics, epoch)
@@ -1279,6 +1286,7 @@ def update_metrics(current, best=None, epoch=None):
             "perplexity": {"value": np.inf},
             "accuracy": {"value": -np.inf},
             "npmi": {"value": -np.inf},
+            "tu": {"value": -np.inf},
         }
 
     for metric in current:

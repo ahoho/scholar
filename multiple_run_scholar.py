@@ -11,17 +11,17 @@ from run_scholar import main
 import file_handling as fh
 from compute_npmi import compute_npmi_at_n
 
-def tu(topics, l=10):
-    """
-    Topic uniqueness measure from https://www.aclweb.org/anthology/P19-1640.pdf
-    """
-    tu_results = []
-    for topics_i in topics:
-        w_counts = 0
-        for w in topics_i[:l]:
-            w_counts += 1 / np.sum([w in topics_j[:l] for topics_j in topics]) # count(k, l)
-        tu_results.append((1 / l) * w_counts)
-    return tu_results
+#def tu(topics, l=10):
+    #"""
+    #Topic uniqueness measure from https://www.aclweb.org/anthology/P19-1640.pdf
+    #"""
+    #tu_results = []
+    #for topics_i in topics:
+        #w_counts = 0
+        #for w in topics_i[:l]:
+            #w_counts += 1 / np.sum([w in topics_j[:l] for topics_j in topics]) # count(k, l)
+        #tu_results.append((1 / l) * w_counts)
+    #return tu_results
 
 if __name__ == "__main__":
     run_parser = argparse.ArgumentParser()
@@ -82,7 +82,7 @@ if __name__ == "__main__":
             continue
 
         m = checkpoint['dev_metrics']
-        ppl, npmi, acc = m['perplexity'], m['npmi'], m['accuracy']
+        ppl, npmi, acc, tu = m['perplexity'], m['npmi'], m['accuracy'], m['tu']
         topics = fh.read_text(Path(outdir_args.o, "topics.txt"))
 
 
@@ -95,10 +95,13 @@ if __name__ == "__main__":
                'npmi_value': float(npmi['value']),
                'npmi_epoch': int(npmi.get('epoch', 0)),
 
+               'tu_value': float(tu['value']),
+               'tu_epoch': int(tu.get('epoch', 0)),
+
                'npmi_ext_value': compute_npmi_at_n(
                    topics, nyt_vocab, nyt_counts, n=run_args.npmi_words, silent=True,
                 ),
-               'tu': np.mean(tu([t.strip().split() for t in topics])),
+               #'tu': np.mean(tu([t.strip().split() for t in topics])),
                
                'accuracy_value': float(acc['value']),
                'accuracy_epoch': int(acc.get('epoch', 0)),
