@@ -30,6 +30,20 @@ def main():
 
     load_and_compute_npmi(topics_file, ref_vocab_file, ref_counts_file, n_vals, cols_to_skip, output_file=output_file)
 
+def tu(topics, l=10, return_mean=True):
+    """
+    Topic uniqueness measure from https://www.aclweb.org/anthology/P19-1640.pdf
+    """
+    tu_results = []
+    for topics_i in topics:
+        w_counts = 0
+        for w in topics_i[:l]:
+            w_counts += 1 / np.sum([w in topics_j[:l] for topics_j in topics]) # count(k, l)
+        tu_results.append((1 / l) * w_counts)
+    if return_mean:
+        return np.mean(tu_results)
+    else:
+        return np.array(tu_results)
 
 def load_and_compute_npmi(topics_file, ref_vocab_file, ref_counts_file, n_vals, cols_to_skip=0, output_file=None):
     print("Loading reference counts")
