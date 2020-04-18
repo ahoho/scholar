@@ -258,6 +258,18 @@ def main(call=None):
         help="How much to weigh doc repesentation reconstruction (0 means none)",
     )
     parser.add_argument(
+        "--negative-doc-reconstruction-method",
+        type=str,
+        default='',
+        help="Discourage reconstruction of a different document (to encourage separate, diverse topics): method can be shift, shuffle, or cosine",
+    )
+    parser.add_argument(
+        "--negative-doc-reconstruction-reg-const",
+        type=float,
+        default=1.0,
+        help="How much to discourage reconstruction of a different document (to encourage separate, diverse topics): method can be shift, shuffle, or cosine",
+    )
+    parser.add_argument(
         "--attend-over-doc-reps",
         action="store_true",
         default=False,
@@ -956,6 +968,8 @@ def make_network(
         attend_over_doc_reps=options.attend_over_doc_reps,
         use_doc_layer=options.use_doc_layer,
         doc_reconstruction_weight=options.doc_reconstruction_weight,
+        negative_doc_reconstruction_method=options.negative_doc_reconstruction_method,
+        negative_doc_reconstruction_reg_const=options.negative_doc_reconstruction_reg_const,
         n_topics=options.n_topics,
         vocab_size=vocab_size,
         label_type=label_type,

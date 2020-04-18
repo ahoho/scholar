@@ -354,6 +354,8 @@ class torchScholar(nn.Module):
         self.attend_over_doc_reps = config["attend_over_doc_reps"]
         self.use_doc_layer = config["use_doc_layer"]
         self.doc_reconstruction_weight = config["doc_reconstruction_weight"]
+        self.negative_doc_reconstruction_method = config["negative_doc_reconstruction_method"]
+        self.negative_doc_reconstruction_reg_const = config["negative_doc_reconstruction_reg_const"]
         self.n_topics = config["n_topics"]
         self.n_labels = config["n_labels"]
         self.n_prior_covars = config["n_prior_covars"]
@@ -745,7 +747,28 @@ class torchScholar(nn.Module):
                 + alpha * DR * X.sum(1, keepdim=True)
             )
             NL += -(smoothed_x * (X_recon + 1e-10).log()).sum(1)
-        
+
+        # factor into the loss encouragement for NOT being able to reconstruct other documents than the one ussed to contruct the posterior and X_recon
+        if self.negative_doc_reconstruction_method=='shift':
+            alpha = self.doc_reconstruction_weight
+            smoothed_x = (
+                (1 - alpha) * X
+                + alpha * DR * X.sum(1, keepdim=True)
+            )
+            smoothed_x2 = torch.roll(smoothed_x, 1, 0)
+            lambda_neg_recon = self.negative_doc_reconstruction_reg_const
+            NL -= -(lambda_neg_recon * ((smoothed_x2 * (X_recon + 1e-10).log()).sum(1)))
+
+        if self.negative_doc_reconstruction_method=='shuffle':
+            alpha = self.doc_reconstruction_weight
+            smoothed_x = (
+                (1 - alpha) * X
+                + alpha * DR * X.sum(1, keepdim=True)
+            )
+            smoothed_x2 = smoothed_x[torch.randperm(smoothed_x.size()[0])]
+            lambda_neg_recon = self.negative_doc_reconstruction_reg_const
+            NL -= -(lambda_neg_recon * ((smoothed_x2 * (X_recon + 1e-10).log()).sum(1)))
+ 
         # compute label loss
         if self.n_labels > 0:
             NL += -(Y * (Y_recon + 1e-10).log()).sum(1) * self.classifier_loss_weight
