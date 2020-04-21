@@ -768,6 +768,20 @@ class torchScholar(nn.Module):
             smoothed_x2 = smoothed_x[torch.randperm(smoothed_x.size()[0])]
             lambda_neg_recon = self.negative_doc_reconstruction_reg_const
             NL -= -(lambda_neg_recon * ((smoothed_x2 * (X_recon + 1e-10).log()).sum(1)))
+
+        if self.negative_doc_reconstruction_method=='cosine':
+            alpha = self.doc_reconstruction_weight
+            smoothed_x = (
+                (1 - alpha) * X
+                + alpha * DR * X.sum(1, keepdim=True)
+            )
+            scores = smoothed_x @ smoothed_x.T
+            mask = -(torch.eye(smoothed_x.size()[0]) - 1)
+            mask = mask.to(self.device)
+            top_idx = torch.argmax(scores * mask, dim=-1)
+            smoothed_x2 = smoothed_x[top_idx]
+            lambda_neg_recon = self.negative_doc_reconstruction_reg_const
+            NL -= -(lambda_neg_recon * ((smoothed_x2 * (X_recon + 1e-10).log()).sum(1)))
  
         # compute label loss
         if self.n_labels > 0:

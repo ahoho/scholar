@@ -11,17 +11,17 @@ from run_scholar import main
 import file_handling as fh
 from compute_npmi import compute_npmi_at_n
 
-#def tu(topics, l=10):
-    #"""
-    #Topic uniqueness measure from https://www.aclweb.org/anthology/P19-1640.pdf
-    #"""
-    #tu_results = []
-    #for topics_i in topics:
-        #w_counts = 0
-        #for w in topics_i[:l]:
-            #w_counts += 1 / np.sum([w in topics_j[:l] for topics_j in topics]) # count(k, l)
-        #tu_results.append((1 / l) * w_counts)
-    #return tu_results
+def tu_at_end(topics, l=10):
+    """
+    Topic uniqueness measure from https://www.aclweb.org/anthology/P19-1640.pdf
+    """
+    tu_results = []
+    for topics_i in topics:
+        w_counts = 0
+        for w in topics_i[:l]:
+            w_counts += 1 / np.sum([w in topics_j[:l] for topics_j in topics]) # count(k, l)
+        tu_results.append((1 / l) * w_counts)
+    return tu_results
 
 if __name__ == "__main__":
     run_parser = argparse.ArgumentParser()
@@ -101,7 +101,7 @@ if __name__ == "__main__":
                'npmi_ext_value': compute_npmi_at_n(
                    topics, nyt_vocab, nyt_counts, n=run_args.npmi_words, silent=True,
                 ),
-               #'tu': np.mean(tu([t.strip().split() for t in topics])),
+               'tu_at_end': np.mean(tu_at_end([t.strip().split() for t in topics])),
                
                'accuracy_value': float(acc['value']),
                'accuracy_epoch': int(acc.get('epoch', 0)),

@@ -30,10 +30,15 @@ def main():
 
     load_and_compute_npmi(topics_file, ref_vocab_file, ref_counts_file, n_vals, cols_to_skip, output_file=output_file)
 
-def tu(topics, l=10, return_mean=True):
+def tu(beta, l=10, return_mean=True):
     """
     Topic uniqueness measure from https://www.aclweb.org/anthology/P19-1640.pdf
     """
+    n_topics, vocab_size = beta.shape
+    topics = []
+    for k in range(n_topics):
+        order = np.argsort(beta[k, :])[::-1]
+        topics.append(order)
     tu_results = []
     for topics_i in topics:
         w_counts = 0
