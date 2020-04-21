@@ -466,16 +466,6 @@ class torchScholar(nn.Module):
                     self.n_topics * self.n_topic_covars, self.vocab_size, bias=False
                 ).to(self.device)
 
-        # create the document representation reconstructor
-        if self.doc_reconstruction_weight:
-            # reconstruct with the logits over words, theta @ beta
-            self.doc_recon_layer_0 = nn.Linear(
-                self.vocab_size, self.doc_reps_dim
-            ).to(self.device)
-            self.doc_recon_layer_1 = nn.Linear(
-                self.doc_reps_dim, self.doc_reps_dim
-            ).to(self.device)
-
         # create the classifier
         if self.n_labels > 0:
             if self.classifier_layers == 0:
