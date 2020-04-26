@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.nn.init import kaiming_uniform_, xavier_uniform_
-
+import ipdb
 
 class Scholar(object):
     def __init__(
@@ -356,6 +356,9 @@ class torchScholar(nn.Module):
         self.doc_reconstruction_weight = config["doc_reconstruction_weight"]
         self.negative_doc_reconstruction_method = config["negative_doc_reconstruction_method"]
         self.negative_doc_reconstruction_reg_const = config["negative_doc_reconstruction_reg_const"]
+        self.use_topic_word_cosine_loss = config["use_topic_word_cosine_loss"]
+        self.topic_word_cosine_loss_const = config["topic_word_cosine_loss_const"]
+        self.use_only_X_for_neg_sampling = config["use_only_X_for_neg_sampling"]
         self.n_topics = config["n_topics"]
         self.n_labels = config["n_labels"]
         self.n_prior_covars = config["n_prior_covars"]
@@ -755,6 +758,8 @@ class torchScholar(nn.Module):
                 (1 - alpha) * X
                 + alpha * DR * X.sum(1, keepdim=True)
             )
+            if self.use_only_X_for_neg_sampling:
+                smoothed_x = X
             smoothed_x2 = torch.roll(smoothed_x, 1, 0)
             lambda_neg_recon = self.negative_doc_reconstruction_reg_const
             NL -= -(lambda_neg_recon * ((smoothed_x2 * (X_recon + 1e-10).log()).sum(1)))
@@ -765,6 +770,8 @@ class torchScholar(nn.Module):
                 (1 - alpha) * X
                 + alpha * DR * X.sum(1, keepdim=True)
             )
+            if self.use_only_X_for_neg_sampling:
+                smoothed_x = X
             smoothed_x2 = smoothed_x[torch.randperm(smoothed_x.size()[0])]
             lambda_neg_recon = self.negative_doc_reconstruction_reg_const
             NL -= -(lambda_neg_recon * ((smoothed_x2 * (X_recon + 1e-10).log()).sum(1)))
@@ -775,10 +782,12 @@ class torchScholar(nn.Module):
                 (1 - alpha) * X
                 + alpha * DR * X.sum(1, keepdim=True)
             )
+            if self.use_only_X_for_neg_sampling:
+                smoothed_x = X
             scores = smoothed_x @ smoothed_x.T
             mask = -(torch.eye(smoothed_x.size()[0]) - 1)
             mask = mask.to(self.device)
-            top_idx = torch.argmax(scores * mask, dim=-1)
+            top_idx = torch.argmin(scores * mask, dim=-1)
             smoothed_x2 = smoothed_x[top_idx]
             lambda_neg_recon = self.negative_doc_reconstruction_reg_const
             NL -= -(lambda_neg_recon * ((smoothed_x2 * (X_recon + 1e-10).log()).sum(1)))
@@ -802,6 +811,17 @@ class torchScholar(nn.Module):
 
         # combine
         loss = NL + KLD
+
+        # add topic-word distribution cosine similarity loss 
+        if self.use_topic_word_cosine_loss:
+            tw = (self.beta_layer.weight.T).to(self.device)
+            tw_normalized = torch.softmax(tw, dim=-1).to(self.device)
+            scores = tw_normalized @ tw_normalized.T
+            tw_scores = torch.tril(scores, diagonal=-1).to(self.device)
+            tw_loss = torch.Tensor(NL.size()).to(self.device).fill_(tw_scores.mean()).to(self.device)
+            #ipdb.set_trace()
+            lambda_tw_loss = self.topic_word_cosine_loss_const
+            loss += (lambda_tw_loss * tw_loss)
 
         # add regularization on prior
         if self.l2_prior_reg > 0 and self.n_prior_covars > 0:
@@ -831,7 +851,7 @@ class torchScholar(nn.Module):
             loss += (
                 self.l1_beta_ci_reg * (l1_strengths_beta_ci * beta_ci_weights_sq).sum()
             )
-
+        # ipdb.set_trace()
         # average losses if desired
         if do_average:
             return loss.mean(), NL.mean(), KLD.mean()

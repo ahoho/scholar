@@ -276,6 +276,24 @@ def main(call=None):
         help="Attend over the doc-representation sequence",
     )
     parser.add_argument(
+        "--use-only-X-for-neg-sampling",
+        action="store_true",
+        default=False,
+        help="Attend over the doc-representation sequence",
+    )
+    parser.add_argument(
+        "--use-topic-word-cosine-loss",
+        action="store_true",
+        default=False,
+        help="Add a loss term for cosine similarity between topic-word distributions",
+    )
+    parser.add_argument(
+        "--topic-word-cosine-loss-const",
+        type=float,
+        default=1.0,
+        help="How much to discourage similar word distributions across topics (measured by cosine similarity)",
+    )
+    parser.add_argument(
         "--use-doc-layer",
         action="store_true",
         default=False,
@@ -967,9 +985,12 @@ def make_network(
         doc_reps_dim=doc_reps_dim,
         attend_over_doc_reps=options.attend_over_doc_reps,
         use_doc_layer=options.use_doc_layer,
+        use_only_X_for_neg_sampling=options.use_only_X_for_neg_sampling,
+        use_topic_word_cosine_loss=options.use_topic_word_cosine_loss,
         doc_reconstruction_weight=options.doc_reconstruction_weight,
         negative_doc_reconstruction_method=options.negative_doc_reconstruction_method,
         negative_doc_reconstruction_reg_const=options.negative_doc_reconstruction_reg_const,
+        topic_word_cosine_loss_const=options.topic_word_cosine_loss_const,
         n_topics=options.n_topics,
         vocab_size=vocab_size,
         label_type=label_type,
@@ -1297,10 +1318,10 @@ def update_metrics(current, best=None, epoch=None):
     """
     if best is None:
         best = {
-            "perplexity": {"value": np.inf},
-            "accuracy": {"value": -np.inf},
-            "npmi": {"value": -np.inf},
-            "tu": {"value": -np.inf},
+            "perplexity": {"value": np.inf, "epoch": None},
+            "accuracy": {"value": -np.inf, "epoch": None},
+            "npmi": {"value": -np.inf, "epoch": None},
+            "tu": {"value": -np.inf, "epoch": None},
         }
 
     for metric in current:

@@ -90,13 +90,13 @@ if __name__ == "__main__":
                'seed': seed,
                'fold': fold, 
                'perplexity_value': float(ppl['value']),
-               'perplexity_epoch': int(ppl.get('epoch', 0)),
+               'perplexity_epoch': ppl.get('epoch', 0),
 
                'npmi_value': float(npmi['value']),
-               'npmi_epoch': int(npmi.get('epoch', 0)),
+               'npmi_epoch': npmi.get('epoch', 0),
 
                'tu_value': float(tu['value']),
-               'tu_epoch': int(tu.get('epoch', 0)),
+               'tu_epoch': tu.get('epoch', 0),
 
                'npmi_ext_value': compute_npmi_at_n(
                    topics, nyt_vocab, nyt_counts, n=run_args.npmi_words, silent=True,
@@ -104,7 +104,7 @@ if __name__ == "__main__":
                'tu_at_end': np.mean(tu_at_end([t.strip().split() for t in topics])),
                
                'accuracy_value': float(acc['value']),
-               'accuracy_epoch': int(acc.get('epoch', 0)),
+               'accuracy_epoch': acc.get('epoch', 0),
             },
             index=[run],
         )
