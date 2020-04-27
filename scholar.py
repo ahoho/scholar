@@ -644,6 +644,8 @@ class torchScholar(nn.Module):
         X_recon_no_bn = F.softmax(eta, dim=1)
         X_recon = eta_bn_prop * X_recon_bn + (1.0 - eta_bn_prop) * X_recon_no_bn
 
+        #ipdb.set_trace()
+
         # reconstruct the document representation
         dr_recon = None
         if self.doc_reconstruction_weight:
@@ -785,9 +787,9 @@ class torchScholar(nn.Module):
             if self.use_only_X_for_neg_sampling:
                 smoothed_x = X
             scores = smoothed_x @ smoothed_x.T
-            mask = -(torch.eye(smoothed_x.size()[0]) - 1)
+            mask = -(torch.eye(scores.size()[0]) - 1)
             mask = mask.to(self.device)
-            top_idx = torch.argmin(scores * mask, dim=-1)
+            top_idx = torch.argmin((scores * mask) + torch.eye(scores.size()[0]).to(self.device), dim=-1)
             smoothed_x2 = smoothed_x[top_idx]
             lambda_neg_recon = self.negative_doc_reconstruction_reg_const
             NL -= -(lambda_neg_recon * ((smoothed_x2 * (X_recon + 1e-10).log()).sum(1)))
@@ -851,7 +853,7 @@ class torchScholar(nn.Module):
             loss += (
                 self.l1_beta_ci_reg * (l1_strengths_beta_ci * beta_ci_weights_sq).sum()
             )
-        # ipdb.set_trace()
+        #ipdb.set_trace()
         # average losses if desired
         if do_average:
             return loss.mean(), NL.mean(), KLD.mean()
