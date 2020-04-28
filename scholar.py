@@ -97,6 +97,7 @@ class Scholar(object):
         TC,
         DR,
         eta_bn_prop=1.0,
+        neg_doc_recon_annealing_const=0.0,
         l1_beta=None,
         l1_beta_c=None,
         l1_beta_ci=None,
@@ -133,6 +134,7 @@ class Scholar(object):
             TC,
             DR,
             eta_bn_prop=eta_bn_prop,
+            neg_doc_recon_annealing_const=neg_doc_recon_annealing_const,
             l1_beta=l1_beta,
             l1_beta_c=l1_beta_c,
             l1_beta_ci=l1_beta_ci,
@@ -356,6 +358,7 @@ class torchScholar(nn.Module):
         self.doc_reconstruction_weight = config["doc_reconstruction_weight"]
         self.negative_doc_reconstruction_method = config["negative_doc_reconstruction_method"]
         self.negative_doc_reconstruction_reg_const = config["negative_doc_reconstruction_reg_const"]
+        self.neg_doc_recon_anneal = config["neg_doc_recon_anneal"]
         self.use_topic_word_cosine_loss = config["use_topic_word_cosine_loss"]
         self.topic_word_cosine_loss_const = config["topic_word_cosine_loss_const"]
         self.use_only_X_for_neg_sampling = config["use_only_X_for_neg_sampling"]
@@ -529,6 +532,7 @@ class torchScholar(nn.Module):
         compute_loss=True,
         do_average=True,
         eta_bn_prop=1.0,
+        neg_doc_recon_annealing_const=0.0,
         var_scale=1.0,
         l1_beta=None,
         l1_beta_c=None,
@@ -714,6 +718,7 @@ class torchScholar(nn.Module):
                     posterior_mean_bn,
                     posterior_logvar_bn,
                     theta,
+                    neg_doc_recon_annealing_const,
                     do_average,
                     l1_beta,
                     l1_beta_c,
@@ -736,6 +741,7 @@ class torchScholar(nn.Module):
         posterior_mean,
         posterior_logvar,
         theta,
+        neg_doc_recon_annealing_const,
         do_average=True,
         l1_beta=None,
         l1_beta_c=None,
@@ -766,7 +772,10 @@ class torchScholar(nn.Module):
             if self.use_only_X_for_neg_sampling:
                 smoothed_x = X
             smoothed_x2 = torch.roll(smoothed_x, 1, 0)
-            lambda_neg_recon = self.negative_doc_reconstruction_reg_const
+            if self.neg_doc_recon_anneal:
+                lambda_neg_recon = neg_doc_recon_annealing_const
+            else:
+                lambda_neg_recon = self.negative_doc_reconstruction_reg_const
             NL -= -(lambda_neg_recon * ((smoothed_x2 * (X_recon + 1e-10).log()).sum(1)))
 
         if self.negative_doc_reconstruction_method=='shuffle':
@@ -778,7 +787,10 @@ class torchScholar(nn.Module):
             if self.use_only_X_for_neg_sampling:
                 smoothed_x = X
             smoothed_x2 = smoothed_x[torch.randperm(smoothed_x.size()[0])]
-            lambda_neg_recon = self.negative_doc_reconstruction_reg_const
+            if self.neg_doc_recon_anneal:
+                lambda_neg_recon = neg_doc_recon_annealing_const
+            else:
+                lambda_neg_recon = self.negative_doc_reconstruction_reg_const
             NL -= -(lambda_neg_recon * ((smoothed_x2 * (X_recon + 1e-10).log()).sum(1)))
 
         if self.negative_doc_reconstruction_method=='cosine':
@@ -798,7 +810,10 @@ class torchScholar(nn.Module):
             mask = mask.to(self.device)
             top_idx = torch.argmin((scores * mask) + torch.eye(scores.size()[0]).to(self.device), dim=-1)
             smoothed_x2 = smoothed_x[top_idx]
-            lambda_neg_recon = self.negative_doc_reconstruction_reg_const
+            if self.neg_doc_recon_anneal:
+                lambda_neg_recon = neg_doc_recon_annealing_const
+            else:
+                lambda_neg_recon = self.negative_doc_reconstruction_reg_const
             NL -= -(lambda_neg_recon * ((smoothed_x2 * (X_recon + 1e-10).log()).sum(1)))
  
         # compute label loss

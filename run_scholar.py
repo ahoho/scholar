@@ -270,6 +270,18 @@ def main(call=None):
         help="How much to discourage reconstruction of a different document (to encourage separate, diverse topics): method can be shift, shuffle, or cosine",
     )
     parser.add_argument(
+        "--neg-doc-recon-anneal",
+        action="store_true",
+        default=False,
+        help="Anneal the Neg Doc Sampling Recon loss term lambda",
+    )
+    parser.add_argument(
+        "--neg-doc-recon-anneal-upper-limit",
+        type=float,
+        default=0.5,
+        help="Upper limit for annealing the Neg Doc Sampling Recon loss term lambda",
+    )
+    parser.add_argument(
         "--attend-over-doc-reps",
         action="store_true",
         default=False,
@@ -632,6 +644,8 @@ def main(call=None):
             PC_dev=dev_prior_covars,
             TC_dev=dev_topic_covars,
             DR_dev=dev_doc_reps,
+            neg_doc_recon_anneal=options.neg_doc_recon_anneal,
+            neg_doc_recon_anneal_upper_limit=options.neg_doc_recon_anneal_upper_limit,
         )
 
     # load best model
@@ -997,6 +1011,7 @@ def make_network(
         doc_reconstruction_weight=options.doc_reconstruction_weight,
         negative_doc_reconstruction_method=options.negative_doc_reconstruction_method,
         negative_doc_reconstruction_reg_const=options.negative_doc_reconstruction_reg_const,
+        neg_doc_recon_anneal=options.neg_doc_recon_anneal,
         topic_word_cosine_loss_const=options.topic_word_cosine_loss_const,
         n_topics=options.n_topics,
         vocab_size=vocab_size,
@@ -1037,6 +1052,8 @@ def train(
     PC_dev=None,
     TC_dev=None,
     DR_dev=None,
+    neg_doc_recon_anneal=False,
+    neg_doc_recon_anneal_upper_limit=0.5,
     bn_anneal=True,
     init_eta_bn_prop=1.0,
     rng=None,
@@ -1053,6 +1070,8 @@ def train(
     num_epochs_no_improvement = 0
 
     eta_bn_prop = init_eta_bn_prop  # interpolation between batch norm and no batch norm in final layer of recon
+
+    neg_doc_recon_annealing_const = 0.0  # anneal the lambda factor controlling impact of neg doc recon loss term
 
     model.train()
 
@@ -1111,6 +1130,7 @@ def train(
                 batch_tcs,
                 batch_drs,
                 eta_bn_prop=eta_bn_prop,
+                neg_doc_recon_annealing_const=neg_doc_recon_annealing_const,
                 l1_beta=l1_beta,
                 l1_beta_c=l1_beta_c,
                 l1_beta_ci=l1_beta_ci,
@@ -1243,6 +1263,12 @@ def train(
                 eta_bn_prop -= 1.0 / float(0.75 * training_epochs)
                 if eta_bn_prop < 0:
                     eta_bn_prop = 0.0
+
+        #anneal neg_doc_recon_annealing_const from 0.0 to neg_doc_recon_anneal_upper_limit
+        if neg_doc_recon_anneal:
+            neg_doc_recon_annealing_const += (neg_doc_recon_anneal_upper_limit / float(0.9 * training_epochs))
+            if neg_doc_recon_annealing_const > neg_doc_recon_anneal_upper_limit:
+                neg_doc_recon_annealing_const = neg_doc_recon_anneal_upper_limit
 
     # finish tr
     model.eval()
