@@ -279,7 +279,13 @@ def main(call=None):
         "--use-only-X-for-neg-sampling",
         action="store_true",
         default=False,
-        help="Attend over the doc-representation sequence",
+        help="when doing the neg doc recon, instead of using smoothed_x, use only X",
+    )
+    parser.add_argument(
+        "--use-doc-topic-rep-for-neg-sampling",
+        action="store_true",
+        default=False,
+        help="When scoring for deciding the least similar negative sample doc to use for neg recon loss, use the K-dimensional latent topic reps of the docs to compare them",
     )
     parser.add_argument(
         "--use-topic-word-cosine-loss",
@@ -986,6 +992,7 @@ def make_network(
         attend_over_doc_reps=options.attend_over_doc_reps,
         use_doc_layer=options.use_doc_layer,
         use_only_X_for_neg_sampling=options.use_only_X_for_neg_sampling,
+        use_doc_topic_rep_for_neg_sampling=options.use_doc_topic_rep_for_neg_sampling,
         use_topic_word_cosine_loss=options.use_topic_word_cosine_loss,
         doc_reconstruction_weight=options.doc_reconstruction_weight,
         negative_doc_reconstruction_method=options.negative_doc_reconstruction_method,

@@ -359,6 +359,7 @@ class torchScholar(nn.Module):
         self.use_topic_word_cosine_loss = config["use_topic_word_cosine_loss"]
         self.topic_word_cosine_loss_const = config["topic_word_cosine_loss_const"]
         self.use_only_X_for_neg_sampling = config["use_only_X_for_neg_sampling"]
+        self.use_doc_topic_rep_for_neg_sampling = config["use_doc_topic_rep_for_neg_sampling"]
         self.n_topics = config["n_topics"]
         self.n_labels = config["n_labels"]
         self.n_prior_covars = config["n_prior_covars"]
@@ -712,6 +713,7 @@ class torchScholar(nn.Module):
                     prior_logvar,
                     posterior_mean_bn,
                     posterior_logvar_bn,
+                    theta,
                     do_average,
                     l1_beta,
                     l1_beta_c,
@@ -733,6 +735,7 @@ class torchScholar(nn.Module):
         prior_logvar,
         posterior_mean,
         posterior_logvar,
+        theta,
         do_average=True,
         l1_beta=None,
         l1_beta_c=None,
@@ -786,7 +789,11 @@ class torchScholar(nn.Module):
             )
             if self.use_only_X_for_neg_sampling:
                 smoothed_x = X
-            scores = smoothed_x @ smoothed_x.T
+            if self.use_doc_topic_rep_for_neg_sampling:
+                scores = theta @ theta.T
+            else:
+                scores = smoothed_x @ smoothed_x.T
+            #scores = smoothed_x @ smoothed_x.T
             mask = -(torch.eye(scores.size()[0]) - 1)
             mask = mask.to(self.device)
             top_idx = torch.argmin((scores * mask) + torch.eye(scores.size()[0]).to(self.device), dim=-1)
