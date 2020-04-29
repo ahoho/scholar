@@ -52,6 +52,11 @@ if __name__ == "__main__":
         121958, 671155, 131932, 365838, 259178, 921881, 616685, 919314, 130398,
         5591, 11235, 2020, 19, 8000, 1001, 12345,
     ])
+    
+    # copy over code
+    Path(outdir_args.o).mkdir(parents=True, exist_ok=True)
+    shutil.copy("run_scholar.py", Path(outdir_args.o, "run_scholar.py"))
+    shutil.copy("scholar.py", Path(outdir_args.o, "scholar.py"))
 
     if Path(outdir_args.o, "dev_metrics.csv").exists():
         old_path = Path(outdir_args.o, "dev_metrics.csv")
