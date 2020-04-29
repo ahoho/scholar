@@ -110,6 +110,7 @@ bills*
 imdb*
 20newsgroups*
 20ng*
+wikitext*
 
 # IntelliJ
 *.iml
