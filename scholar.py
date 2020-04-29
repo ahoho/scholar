@@ -354,6 +354,8 @@ class torchScholar(nn.Module):
         self.attend_over_doc_reps = config["attend_over_doc_reps"]
         self.use_doc_layer = config["use_doc_layer"]
         self.doc_reconstruction_weight = config["doc_reconstruction_weight"]
+        self.doc_reconstruction_temp = config["doc_reconstruction_temp"]
+        self.doc_reconstruction_min_count = config["doc_reconstruction_min_count"]
         self.n_topics = config["n_topics"]
         self.n_labels = config["n_labels"]
         self.n_prior_covars = config["n_prior_covars"]
@@ -630,13 +632,13 @@ class torchScholar(nn.Module):
         X_recon = eta_bn_prop * X_recon_bn + (1.0 - eta_bn_prop) * X_recon_no_bn
 
         # reconstruct the document representation
-        dr_recon = None
-        if self.doc_reconstruction_weight:
-            # eta_interp = eta_bn_prop * eta_bn + (1.0 - eta_bn_prop) * eta
-            # dr_recon0 = self.doc_recon_layer_0(eta_interp)
-            # dr_recon0_sp = F.softplus(dr_recon0)
-            dr_recon = X_recon
-
+        X_soft_recon = None
+        if self.doc_reconstruction_temp is not None:
+            X_soft_recon = (
+                eta_bn_prop * F.softmax(eta_bn / self.doc_reconstruction_temp, dim=1) 
+                + (1.0 - eta_bn_prop) * F.softmax(eta / self.doc_reconstruction_temp, dim=1) 
+            )
+        
         # predict labels
         Y_recon = None
         if self.n_labels > 0:
@@ -690,7 +692,7 @@ class torchScholar(nn.Module):
                     DR,
                     X_recon,
                     Y_recon,
-                    dr_recon,
+                    X_soft_recon,
                     prior_mean,
                     prior_logvar,
                     posterior_mean_bn,
@@ -711,7 +713,7 @@ class torchScholar(nn.Module):
         DR,
         X_recon,
         Y_recon,
-        dr_recon,
+        X_soft_recon,
         prior_mean,
         prior_logvar,
         posterior_mean,
@@ -727,14 +729,28 @@ class torchScholar(nn.Module):
         if self.reconstruct_bow:
             NL += -(X * (X_recon + 1e-10).log()).sum(1)
 
-        # compute document representation reconstruction loss
-        if self.doc_reconstruction_weight:
+        # match a "smoothed" representation of the document using BERT probs
+        if X_soft_recon is None and self.doc_reconstruction_weight is not None:
             alpha = self.doc_reconstruction_weight
             smoothed_x = (
                 (1 - alpha) * X 
                 + alpha * DR * X.sum(1, keepdim=True)
             )
             NL += -(smoothed_x * (X_recon + 1e-10).log()).sum(1)
+
+        # more faithful knowledge distillation
+        if X_soft_recon is not None:
+            alpha = self.doc_reconstruction_weight
+            t = self.doc_reconstruction_temp
+            
+            X_soft = torch.softmax(DR / t, dim=-1) * X.sum(1, keepdim=True) # multiply probabilities by counts
+            X_soft = X_soft * (X_soft > self.doc_reconstruction_min_count).float()
+
+            kd_loss = (alpha * t * t) * -(X_soft * (X_soft_recon + 1e-10).log()).sum(1)
+            standard_loss = (1 - alpha) * -(X * (X_recon + 1e-10).log()).sum(1)
+
+            # overwrite the NL loss (more of a safeguard than anything)
+            NL = kd_loss + standard_loss
         
         # compute label loss
         if self.n_labels > 0:

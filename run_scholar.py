@@ -255,7 +255,20 @@ def main(call=None):
     parser.add_argument(
         "--doc-reconstruction-weight",
         type=float,
+        default=None,
         help="How much to weigh doc repesentation reconstruction (0 means none)",
+    )
+    parser.add_argument(
+        "--doc-reconstruction-temp",
+        type=float,
+        default=None,
+        help="Temperature to use when softmaxing over the doc reconstruction logits",
+    )
+    parser.add_argument(
+        "--doc-reconstruction-min-count",
+        type=float,
+        default=0.,
+        help="Minimum pseudo-count to accept",
     )
     parser.add_argument(
         "--attend-over-doc-reps",
@@ -956,6 +969,8 @@ def make_network(
         attend_over_doc_reps=options.attend_over_doc_reps,
         use_doc_layer=options.use_doc_layer,
         doc_reconstruction_weight=options.doc_reconstruction_weight,
+        doc_reconstruction_temp=options.doc_reconstruction_temp,
+        doc_reconstruction_min_count=options.doc_reconstruction_min_count,
         n_topics=options.n_topics,
         vocab_size=vocab_size,
         label_type=label_type,
