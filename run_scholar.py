@@ -456,13 +456,17 @@ def main(call=None):
             options.topic_covars,
             covariate_selector=topic_covar_selector,
         )
-        dev_doc_reps = load_doc_reps(
-            options.doc_reps_dir,
-            prefix=options.dev_prefix,
-            row_selector=dev_row_selector,
-            use_sequences=options.attend_over_doc_reps,
-        )
-
+        try:
+            dev_doc_reps = load_doc_reps(
+                options.doc_reps_dir,
+                prefix=options.dev_prefix,
+                row_selector=dev_row_selector,
+                use_sequences=options.attend_over_doc_reps,
+            )
+        except FileNotFoundError:
+            print("Dev document representation not found, will set to log of dev_X")
+            dev_doc_reps = np.log(np.array(dev_X.todense()) + 1e-10) # HACK
+    
     # load the test data
     test_ids = None
     if options.test_prefix is not None:
@@ -1179,6 +1183,7 @@ def train(
                 model.eval()
 
                 # perplexity
+                dev_perplexity = 0.0
                 dev_perplexity = evaluate_perplexity(
                     model,
                     X_dev,
