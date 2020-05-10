@@ -271,6 +271,12 @@ def main(call=None):
         help="Minimum pseudo-count to accept",
     )
     parser.add_argument(
+        "--doc-reconstruction-logit-clipping",
+        type=float,
+        default=None,
+        help="Keep only the teacher logits corresponding to the top `N * x` unique words for each doc",
+    )
+    parser.add_argument(
         "--attend-over-doc-reps",
         action="store_true",
         default=False,
@@ -386,6 +392,16 @@ def main(call=None):
     options.n_train, vocab_size = train_X.shape
     options.n_labels = n_labels
 
+    if options.doc_reconstruction_logit_clipping is not None:
+        # limit the document representations to the top k labels
+        doc_tokens = np.array((train_X > 0).sum(1)).reshape(-1)
+
+        for i, (row, total) in enumerate(zip(train_doc_reps, doc_tokens)):
+            k = options.doc_reconstruction_logit_clipping * total # keep this many logits
+            if k < vocab_size:
+                min_logit = np.quantile(row, 1 - k / vocab_size)
+                train_doc_reps[i, train_doc_reps[i] < min_logit] = -np.inf
+    
     if n_labels > 0:
         print("Train label proportions:", np.mean(train_labels, axis=0))
     

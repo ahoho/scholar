@@ -558,7 +558,7 @@ class torchScholar(nn.Module):
         if self.n_topic_covars > 0:
             encoder_parts.append(TC)
         if self.doc_reps_dim is not None:
-            dr_out = DR
+            dr_out = torch.clamp(DR, min=-40)
 
             if self.attend_over_doc_reps:
                 mask = dr_out[:, :, 0] == 0
