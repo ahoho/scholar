@@ -32,6 +32,13 @@ def main(call=None):
         help="Initial learning rate",
     )
     parser.add_argument(
+        "--eta-bn-anneal-step-const",
+        type=float,
+        default=0.75,
+        help="When to terminate batch-norm annealing, as a percentage of total epochs"
+    )
+
+    parser.add_argument(
         "-m",
         dest="momentum",
         type=float,
@@ -618,6 +625,7 @@ def main(call=None):
             training_epochs=options.epochs,
             batch_size=options.batch_size,
             patience=options.patience,
+            eta_bn_anneal_step_const=options.eta_bn_anneal_step_const,
             dev_metric=options.dev_metric,
             rng=rng,
             X_dev=dev_X,
@@ -1028,6 +1036,7 @@ def train(
     DR_dev=None,
     bn_anneal=True,
     init_eta_bn_prop=1.0,
+    eta_bn_anneal_step_const=0.75,
     rng=None,
     min_weights_sq=1e-7,
 ):
@@ -1222,7 +1231,7 @@ def train(
         # anneal eta_bn_prop from 1.0 to 0.0 over training
         if bn_anneal:
             if eta_bn_prop > 0:
-                eta_bn_prop -= 1.0 / float(0.75 * training_epochs)
+                eta_bn_prop -= 1.0 / float(eta_bn_anneal_step_const * training_epochs)
                 if eta_bn_prop < 0:
                     eta_bn_prop = 0.0
 
