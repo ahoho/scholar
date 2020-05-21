@@ -30,6 +30,7 @@ if __name__ == "__main__":
     run_parser.add_argument("--store-all", default=False, action='store_true')
     run_parser.add_argument("--dev-folds", type=int)
     run_parser.add_argument("--npmi-words", type=int, default=10)
+    run_parser.add_argument("--min-acceptable-npmi", type=float, default=0.)
     run_parser.add_argument(
         "--ext-counts-fpath",
         default="/fs/clip-scratch/pgoel/scholar_orig/scholar/nyt_dir/ref_counts.npz"
@@ -90,7 +91,6 @@ if __name__ == "__main__":
         ppl, npmi, acc = m['perplexity'], m['npmi'], m['accuracy']
         topics = fh.read_text(Path(outdir_args.o, "topics.txt"))
 
-
         results = pd.DataFrame({
                'seed': seed,
                'fold': fold, 
@@ -114,8 +114,9 @@ if __name__ == "__main__":
         results.to_csv(
             Path(outdir_args.o, "dev_metrics.csv"),
             mode='a',
-            header=run==0,
+            header=run==0, # only save header for the first run
         )
+
         if run_args.store_all:
             seed_path = Path(outdir_args.o, str(seed))
             if not seed_path.exists():
@@ -123,3 +124,13 @@ if __name__ == "__main__":
             for fpath in Path(outdir_args.o).glob("*"):
                 if fpath.name not in ['torch_model.pt', 'dev_metrics.csv'] and fpath.is_file():
                     shutil.copyfile(fpath, Path(seed_path, fpath.name))
+
+        # stop entirely if run was very bad
+        if npmi['value'] < run_args.min_acceptable_npmi:
+            with open("stopped_due_to_low_npmi.txt", "w") as outfile:
+                outfile.write("")
+            print(f"Stopped: NPMI of {npmi['value']:0.4f} < {run_args.min_acceptable_npmi}")
+            break
+
+    # Save the arguments
+    fh.write_to_json(checkpoint["options"].__dict__, Path(outdir_args.o, "args.json"))
