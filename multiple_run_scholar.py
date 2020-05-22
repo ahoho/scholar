@@ -44,8 +44,8 @@ if __name__ == "__main__":
     outdir_parser.add_argument("-o")
     outdir_args, _ = outdir_parser.parse_known_args(additional_args)
 
-    nyt_counts = fh.load_sparse(run_args.ext_counts_fpath)
-    nyt_vocab = fh.read_json(run_args.ext_vocab_fpath)
+    #nyt_counts = fh.load_sparse(run_args.ext_counts_fpath)
+    #nyt_vocab = fh.read_json(run_args.ext_vocab_fpath)
     
     np.random.seed(run_args.global_seed)
     run_seeds = iter([
@@ -100,9 +100,9 @@ if __name__ == "__main__":
                'npmi_value': float(npmi['value']),
                'npmi_epoch': int(npmi.get('epoch', 0)),
 
-               'npmi_ext_value': compute_npmi_at_n(
-                   topics, nyt_vocab, nyt_counts, n=run_args.npmi_words, silent=True,
-                ),
+               #'npmi_ext_value': compute_npmi_at_n(
+               #    topics, nyt_vocab, nyt_counts, n=run_args.npmi_words, silent=True,
+               # ),
                'tu': np.mean(tu([t.strip().split() for t in topics])),
                
                'accuracy_value': float(acc['value']),
