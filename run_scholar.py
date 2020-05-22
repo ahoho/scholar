@@ -399,7 +399,10 @@ def main(call=None):
     options.n_train, vocab_size = train_X.shape
     options.n_labels = n_labels
 
-    if options.doc_reconstruction_logit_clipping is not None:
+    if (
+        options.doc_reconstruction_logit_clipping is not None 
+        and options.doc_reconstruction_logit_clipping > 0
+    ):
         # limit the document representations to the top k labels
         doc_tokens = np.array((train_X > 0).sum(1)).reshape(-1)
 
