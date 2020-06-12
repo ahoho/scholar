@@ -26,6 +26,7 @@ def tu(topics, l=10):
 if __name__ == "__main__":
     run_parser = argparse.ArgumentParser()
     run_parser.add_argument("--runs", default=1, type=int)
+    run_parser.add_argument("-o")
     run_parser.add_argument("--global-seed", type=int)
     run_parser.add_argument("--store-all", default=False, action='store_true')
     run_parser.add_argument("--dev-folds", type=int)
@@ -41,10 +42,6 @@ if __name__ == "__main__":
     )
     run_args, additional_args = run_parser.parse_known_args()
 
-    outdir_parser = argparse.ArgumentParser()
-    outdir_parser.add_argument("-o")
-    outdir_args, _ = outdir_parser.parse_known_args(additional_args)
-
     #nyt_counts = fh.load_sparse(run_args.ext_counts_fpath)
     #nyt_vocab = fh.read_json(run_args.ext_vocab_fpath)
     
@@ -55,14 +52,14 @@ if __name__ == "__main__":
     ])
     
     # copy over code
-    Path(outdir_args.o).mkdir(parents=True, exist_ok=True)
-    shutil.copy("run_scholar.py", Path(outdir_args.o, "run_scholar.py"))
-    shutil.copy("scholar.py", Path(outdir_args.o, "scholar.py"))
+    Path(run_args.o).mkdir(parents=True, exist_ok=True)
+    shutil.copy("run_scholar.py", Path(run_args.o, "run_scholar.py"))
+    shutil.copy("scholar.py", Path(run_args.o, "scholar.py"))
 
-    if Path(outdir_args.o, "dev_metrics.csv").exists():
-        old_path = Path(outdir_args.o, "dev_metrics.csv")
+    if Path(run_args.o, "dev_metrics.csv").exists():
+        old_path = Path(run_args.o, "dev_metrics.csv")
         ctime = datetime.fromtimestamp(old_path.stat().st_ctime).strftime("%Y-%m-%d")
-        new_path = Path(outdir_args.o, f"dev_metrics_{ctime}.csv")
+        new_path = Path(run_args.o, f"dev_metrics_{ctime}.csv")
         Path(old_path).rename(new_path)
 
     for run in range(run_args.runs):
@@ -75,21 +72,29 @@ if __name__ == "__main__":
         else:
             fold = None
             seed = next(run_seeds)
-        additional_args += ['--seed', f'{seed}']
+
+        # save to the node's scratch
+        scratch_path = Path("/scratch/", Path(run_args.o).parent.name, Path(run_args.o).name)
+        scratch_path.mkdir(parents=True, exist_ok=True)
+        additional_args += ['--seed', f'{seed}', '-o', str(scratch_path)]
         
         # run scholar
         main(additional_args)
 
+        # copy over to the persistent FSx storage
+        for fpath in Path(scratch_path).glob("*"):
+            shutil.copyfile(fpath, Path(run_args.o, fpath.name))
+
         # load model and store metrics
         try:
-            checkpoint = torch.load(Path(outdir_args.o, "torch_model.pt"))
+            checkpoint = torch.load(Path(run_args.o, "torch_model.pt"))
         except EOFError:
             print("Got EOFError, restarting run")
             continue
 
         m = checkpoint['dev_metrics']
         ppl, npmi, acc = m['perplexity'], m['npmi'], m['accuracy']
-        topics = fh.read_text(Path(outdir_args.o, "topics.txt"))
+        topics = fh.read_text(Path(run_args.o, "topics.txt"))
 
         results = pd.DataFrame({
                'seed': seed,
@@ -112,25 +117,25 @@ if __name__ == "__main__":
         )
 
         results.to_csv(
-            Path(outdir_args.o, "dev_metrics.csv"),
+            Path(run_args.o, "dev_metrics.csv"),
             mode='a',
             header=run==0, # only save header for the first run
         )
 
         if run_args.store_all:
-            seed_path = Path(outdir_args.o, str(seed))
+            seed_path = Path(run_args.o, str(seed))
             if not seed_path.exists():
                 seed_path.mkdir()
-            for fpath in Path(outdir_args.o).glob("*"):
+            for fpath in Path(run_args.o).glob("*"):
                 if fpath.name not in ['torch_model.pt', 'dev_metrics.csv'] and fpath.is_file():
                     shutil.copyfile(fpath, Path(seed_path, fpath.name))
 
         # stop entirely if run was very bad
         if npmi['value'] < run_args.min_acceptable_npmi:
-            with open("stopped_due_to_low_npmi.txt", "w") as outfile:
+            with open(Path(run_args.o, "stopped_due_to_low_npmi.txt"), "w") as outfile:
                 outfile.write("")
             print(f"Stopped: NPMI of {npmi['value']:0.4f} < {run_args.min_acceptable_npmi}")
             break
 
     # Save the arguments
-    fh.write_to_json(checkpoint["options"].__dict__, Path(outdir_args.o, "args.json"))
+    fh.write_to_json(checkpoint["options"].__dict__, Path(run_args.o, "args.json"))
