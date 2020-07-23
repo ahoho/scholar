@@ -65,4 +65,4 @@ min_npmi=0.0
 
 # First argument should be the preprocessor output from Scholar
 # Using --dev-prefix test (i.e. using test set as dev data)
-array_contains arr $VAR && echo "For rww baseline, skipping ${VAR}" || /workspace/.conda/envs/scholar/bin/python multiple_run_scholar.py ../data/real_world_worry/processed --dev-metric npmi -k ${topics} --epochs 500 --patience 500 --batch-size 200 --background-embeddings --device 0 --global-seed 42 --store-all --dev-prefix test --runs 5 -l ${lr} --alpha ${alpha} --min-acceptable-npmi ${min_npmi} -o ../results/sweep/rww_scholar_baseline/output_topics-${topics}_lr-${lr}_alpha-${alpha}/
+array_contains arr $VAR && echo "For rww baseline, skipping ${VAR}" || /workspace/.conda/envs/scholar/bin/python multiple_run_scholar.py /workspace/kd-topic-modeling/data/real_world_worry/processed --dev-metric npmi -k ${topics} --epochs 500 --patience 500 --batch-size 200 --background-embeddings --device 0 --global-seed 42 --store-all --dev-prefix test --runs 5 -l ${lr} --alpha ${alpha} --min-acceptable-npmi ${min_npmi} -o ../results/sweep/rww_scholar_baseline_phrases/output_topics-${topics}_lr-${lr}_alpha-${alpha}/
