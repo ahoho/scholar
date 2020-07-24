@@ -33,11 +33,16 @@ stoplist = load_wordlist("./stopwords/mallet_stopwords.txt")
 sys.stderr.write("Initializing spacy\n")
 nlp = spacy.load("en_core_web_sm")
 
+# Initialize NLTK phrase tokenizer
+sys.stderr.write("Initializing known-phrase recognition\n")
+known_phrases    = load_wordlist("known_phrases.txt")
+phrase_tokenizer = initialize_known_phrase_tokenization(known_phrases)
+
 # Main loop
 for line in sys.stdin:
     obj                   = json.loads(line)
     text                  = obj['text']
-    tokens                = tokenize_string_adding_phrases(nlp, text, stoplist, 3)
+    tokens                = tokenize_string_adding_phrases(nlp, text, stoplist, 3, phrase_tokenizer)
     obj['tokenized_text'] = " ".join(tokens)
     new = json.dumps(obj)
     print(new)
