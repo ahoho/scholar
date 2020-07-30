@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --array=0-26
+#SBATCH --array=0-35
 #SBATCH --job-name=cord19_scholar_baseline_sweep
 #SBATCH --output=/workspace/sweep_outs_and_errors/cord19_baseline_sweep_output_%A_%a.txt
 #SBATCH --error=/workspace/sweep_outs_and_errors/cord19_baseline_sweep_error_%A_%a.txt
@@ -24,7 +24,51 @@
 ################################################################
 # Record of preprocessing, where $D is the data directory
 ################################################################
+#
+# Did the following in directory $D to create tokenized dataset with dummy label
+# where 'shuf' randomly shuffles for train/test split
+#
+#    cat sampled_50K.jsonl \
+#      | python ~/kd-topic-modeling/kd-scholar/tokenize_with_phrases.py \
+#      | python add_label_element.py \
+#      | shuf \
+#     > sampled_50K_shuffled.jsonl
+#
+# Did the following to create 80-20 train/test split
+#    head -40000 sampled_50K_shuffled.jsonl > train_40K.jsonl
+#    tail -10000 sampled_50K_shuffled.jsonl > test_10K.jsonl
+#    ln -s train_40K.jsonl train.jsonlist
+#    ln -s test_10K.jsonl  test.jsonlist
+#
+# Came back to current directory. Preprocessin command:
 #  > python preprocess_data.py $D/train.jsonlist $D/processed --test $D/test.jsonlist --label dummy_label --tokenized --min-doc-count 10 --max-doc-freq .9
+#
+#  Using snowball stopwords
+#  Reading data files
+#  Found 40000 training documents
+#  Found 10000 test documents
+#  Parsing documents
+#  Using tokenized_text element as the source of text to process
+#  Train set processing complete
+#  Test set processing complete
+#  Size of full vocabulary=259718
+#  Found label dummy_label with 1 classes
+#  Selecting the vocabulary
+#  Excluding words with frequency > 0.90: []
+#  Vocab size after filtering = 20606
+#  Final vocab size = 20606
+#  Most common words remaining: coronavirus pandemic disease patients sars infection respiratory severe health results
+#  Converting to count representations
+#  Size of train document-term matrix: (40000, 20606)
+#  Converting to count representations
+#  Size of test document-term matrix: (10000, 20606)
+#  0 words missing from training data
+#  507 words missing from test data
+#  Done!
+#
+# ======
+# Output from old preprocessing run....
+#
 # Using snowball stopwords
 # Reading data files
 # Found 40000 training documents
@@ -49,9 +93,9 @@
 # Done!
 
 
-topics_values=( 50 100 150 )
+topics_values=( 150 200 )
 lr_values=( 0.001 0.002 0.005 )
-alpha_values=( 0.005 0.01 0.1  )
+alpha_values=( 0.0005 0.00075 0.001 0.005 0.01 0.1 )
 
 trial=${SLURM_ARRAY_TASK_ID}
 topics=${topics_values[$(( trial % ${#topics_values[@]} ))]}
@@ -80,7 +124,7 @@ array_contains () {
 	return $in
 }
 
-declare -a arr=( "topics-50_lr-0.001_alpha-0.005" "topics-50_lr-0.001_alpha-0.01" "topics-50_lr-0.001_alpha-0.1" "topics-100_lr-0.001_alpha-0.005" "topics-100_lr-0.001_alpha-0.01" "topics-100_lr-0.001_alpha-0.1" "topics-150_lr-0.001_alpha-0.005" "topics-150_lr-0.001_alpha-0.01" "topics-150_lr-0.001_alpha-0.1" "topics-50_lr-0.002_alpha-0.005" "topics-50_lr-0.002_alpha-0.01" "topics-50_lr-0.002_alpha-0.1" "topics-100_lr-0.002_alpha-0.005" "topics-100_lr-0.002_alpha-0.01" "topics-100_lr-0.002_alpha-0.1" "topics-150_lr-0.002_alpha-0.005" "topics-150_lr-0.002_alpha-0.01" "topics-150_lr-0.002_alpha-0.1" "topics-50_lr-0.005_alpha-0.005" "topics-50_lr-0.005_alpha-0.01" "topics-50_lr-0.005_alpha-0.1" "topics-100_lr-0.005_alpha-0.005" "topics-100_lr-0.005_alpha-0.01" "topics-100_lr-0.005_alpha-0.1" "topics-150_lr-0.005_alpha-0.005" "topics-150_lr-0.005_alpha-0.01" "topics-150_lr-0.005_alpha-0.1" )
+declare -a arr=( "topics-150_lr-0.001_alpha-0.0005" "topics-150_lr-0.001_alpha-0.00075" "topics-150_lr-0.001_alpha-0.001" "topics-150_lr-0.001_alpha-0.005" "topics-150_lr-0.001_alpha-0.01" "topics-150_lr-0.001_alpha-0.1" "topics-150_lr-0.002_alpha-0.0005" "topics-150_lr-0.002_alpha-0.00075" "topics-150_lr-0.002_alpha-0.001" "topics-150_lr-0.002_alpha-0.005" "topics-150_lr-0.002_alpha-0.01" "topics-150_lr-0.002_alpha-0.1" "topics-150_lr-0.005_alpha-0.0005" "topics-150_lr-0.005_alpha-0.00075" "topics-150_lr-0.005_alpha-0.001" "topics-150_lr-0.005_alpha-0.005" "topics-150_lr-0.005_alpha-0.01" "topics-150_lr-0.005_alpha-0.1" "topics-200_lr-0.001_alpha-0.0005" "topics-200_lr-0.001_alpha-0.00075" "topics-200_lr-0.001_alpha-0.001" "topics-200_lr-0.001_alpha-0.005" "topics-200_lr-0.001_alpha-0.01" "topics-200_lr-0.001_alpha-0.1" "topics-200_lr-0.002_alpha-0.0005" "topics-200_lr-0.002_alpha-0.00075" "topics-200_lr-0.002_alpha-0.001" "topics-200_lr-0.002_alpha-0.005" "topics-200_lr-0.002_alpha-0.01" "topics-200_lr-0.002_alpha-0.1" "topics-200_lr-0.005_alpha-0.0005" "topics-200_lr-0.005_alpha-0.00075" "topics-200_lr-0.005_alpha-0.001" "topics-200_lr-0.005_alpha-0.005" "topics-200_lr-0.005_alpha-0.01" "topics-200_lr-0.005_alpha-0.1" )
 
 VAR="topics-${topics}_lr-${lr}_alpha-${alpha}"
 
