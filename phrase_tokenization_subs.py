@@ -64,12 +64,30 @@ def extract_tokens_and_phrases(nlp, input_string, stoplist, max_chunk_length):
 # Returns true if token fits rules for filtering tokens out
 # Filters
 #  - strings in stoplist
-#  - strings with a non-alphanumeric character 
+#  - strings containing a non-alphanumeric character other than hyphen or underscore
 #  - strings that are entirely numeric
+#
+# 2020-08-13 Saving info about latest change so it's easy to undo if necessary
+#    -#  - strings with a non-alphanumeric character 
+#    +#  - strings containing a non-alphanumeric character other than hyphen or underscore
+#     #  - strings that are entirely numeric
+#     def filter_token(token,stoplist):
+#         return (token in stoplist
+#    -            or re.search('[^\w_]', token) is not None
+#    -            or re.search('[^\d]',  token) is None)
+#    +            or re.search('[^\w_\-]', token) is not None
+#    +            or re.search('[^\d]',  token) is None
+#    +            or token == '-'
+#    +            or token == '_'
+#    +    )
 def filter_token(token,stoplist):
     return (token in stoplist
-            or re.search('[^\w_]', token) is not None
-            or re.search('[^\d]',  token) is None)
+            or re.search('[^\w_\-]', token) is not None
+            or re.search('[^\d]',  token) is None
+            or token == '-'
+            or token == '_'
+    )
+
 
 # Initialization for tokenize_known_phrases()
 # Argument is a list of known phrases, either space- or underscore-separated strings.
