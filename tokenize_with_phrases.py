@@ -7,6 +7,7 @@
 #  Output: adds a 'tokenized' element to each json line,
 #          doing spaCy-based tokenization in which multi-word
 #          phrases have been appended to the unigram tokens.
+#          Also tokenizes any phrases in hardwired ./known_phrases.txt.
 #
 #  NOTE: Hardwires relative path to stopword list
 #        This should be turned into a command line argument
