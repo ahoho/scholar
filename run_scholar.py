@@ -298,6 +298,7 @@ def main(call=None):
     parser.add_argument(
         "--classify-from-doc-reps",
         action="store_true",
+        default=False,
         help="Use document representations to classify?"
     )
     parser.add_argument(
@@ -1600,7 +1601,7 @@ def print_topic_label_associations(
         else:
             TC = None
 
-        probs = model.predict_from_topics(Z, PC, TC)
+        probs = model.predict_from_topics(Z, PC, TC, DR=None)
         probs_list.append(probs)
         if options.n_labels > 0 and options.n_labels < 7:
             output = str(k) + ": "
