@@ -1,0 +1,54 @@
+Directories
+
+    inputs/
+      Real World Worry dataset
+      https://github.com/ben-aaron188/covid19worry
+
+    code/
+      analyze.py - example routines manipulating scholar topic models
+      csv2jsonl.py - converts csv to jsonlines
+	python csv2jsonl.py < inputs/rwwd.csv > inputs/rwwd.jsonl
+
+Running an example end to end
+
+  # Install scholar per its instructions and activate environment
+  conda activate scholar_clip
+
+  # If not already installed:
+  conda install gitpython
+  conda install tqdm
+  conda install matplotlib
+
+  # Split inputs/rwwd.jsonl into rwwd-train.jsonlist and rwwd-test.jsonlist
+  # e.g. via head/tail or random split
+
+  # Go to scholar code directory
+  cd ..
+
+  # Preprocess example dataset
+  # Include --tokenized if input files contain a 'tokenized_text' element to use rather than using Scholar tokenization
+  # Note that 
+  D=./example
+  mkdir $D/processed
+  python preprocess_data.py $D/inputs/rwwd-train.jsonlist $D/processed --test $D/inputs/rwwd-test.jsonlist  --label chosen_emotion 
+
+  # Run vanilla Scholar topic model
+  # Also see https://github.com/dallascard/scholar/blob/master/tutorial.ipynb
+  # Though note some differences in our version, e.g. --background-embeddings
+  # 
+  # Leave out --labels argument for vanilla topic model
+  # Note that --background-embeddings inits to random by default in our version
+  #
+  P=$D/processed
+  python run_scholar.py $P -k 10 --test-prefix test --labels chosen_emotion --device 0 -o $D/vanilla_scholar_10topics
+
+  # Create document-topic matrix as CSV in ./example/vanilla_10topics_out.csv
+  # Note: hardwired paths in this script!
+  python ./example/code/analyze.py
+
+  # More generally, to inspect results (beta and theta as dict-like object)
+  # see Dallas's tutorial.  As a first step:
+  import numpy as np
+  import os
+  beta = np.load(os.path.join('./example/vanilla_scholar_10topics', 'beta.npz'))['beta']
+
