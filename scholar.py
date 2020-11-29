@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.nn.init import xavier_uniform_
+from torch.nn.init import kaiming_uniform_, xavier_uniform_
 
 
 class Scholar(object):
@@ -13,7 +13,6 @@ class Scholar(object):
         alpha=1.0,
         learning_rate=0.001,
         init_embeddings=None,
-        update_embeddings=True,
         init_bg=None,
         update_background=True,
         adam_beta1=0.99,
@@ -22,6 +21,7 @@ class Scholar(object):
         seed=None,
         classify_from_covars=True,
         classify_from_topics=True,
+        classify_from_doc_reps=True,
     ):
 
         """
@@ -49,7 +49,6 @@ class Scholar(object):
         self.learning_rate = learning_rate
         self.adam_beta1 = adam_beta1
 
-        self.update_embeddings = update_embeddings
         self.update_background = update_background
 
         # create priors on the hidden state
@@ -73,12 +72,12 @@ class Scholar(object):
         self._model = torchScholar(
             config,
             self.alpha,
-            update_embeddings,
             init_emb=init_embeddings,
             bg_init=init_bg,
             device=self.device,
             classify_from_covars=classify_from_covars,
             classify_from_topics=classify_from_topics,
+            classify_from_doc_reps=classify_from_doc_reps,
         ).to(self.device)
 
         # set the criterion
@@ -96,6 +95,7 @@ class Scholar(object):
         Y,
         PC,
         TC,
+        DR,
         eta_bn_prop=1.0,
         l1_beta=None,
         l1_beta_c=None,
@@ -107,6 +107,7 @@ class Scholar(object):
         :param Y: np.array of labels [batch size x n_labels]
         :param PC: np.array of prior covariates influencing the document-topic prior [batch size x n_prior_covars]
         :param TC: np.array of topic covariates to be associated with topical deviations [batch size x n_topic_covars]
+        :param DR: np.array of document representations [batch size x doc_dim]
         :param l1_beta: np.array of prior variances on the topic weights
         :param l1_beta_c: np.array of prior variances on the weights for topic covariates
         :param l1_beta_ci: np.array of prior variances on the weights for topic-covariate interactions
@@ -120,6 +121,8 @@ class Scholar(object):
             PC = torch.Tensor(PC).to(self.device)
         if TC is not None:
             TC = torch.Tensor(TC).to(self.device)
+        if DR is not None:
+            DR = torch.Tensor(DR).to(self.device)
         self.optimizer.zero_grad()
 
         # do a forward pass
@@ -128,6 +131,7 @@ class Scholar(object):
             Y,
             PC,
             TC,
+            DR,
             eta_bn_prop=eta_bn_prop,
             l1_beta=l1_beta,
             l1_beta_c=l1_beta_c,
@@ -148,7 +152,7 @@ class Scholar(object):
             kld.to("cpu").detach().numpy(),
         )
 
-    def predict(self, X, PC, TC, eta_bn_prop=0.0):
+    def predict(self, X, PC, TC, DR, eta_bn_prop=0.0):
         """
         Predict labels for a minibatch of data
         """
@@ -163,12 +167,14 @@ class Scholar(object):
             PC = torch.Tensor(PC).to(self.device)
         if TC is not None:
             TC = torch.Tensor(TC).to(self.device)
+        if DR is not None:
+            DR = torch.Tensor(DR).to(self.device)
         theta, _, Y_recon, _ = self._model(
-            X, Y, PC, TC, do_average=False, var_scale=0.0, eta_bn_prop=eta_bn_prop
+            X, Y, PC, TC, DR, do_average=False, var_scale=0.0, eta_bn_prop=eta_bn_prop
         )
         return theta, Y_recon.to("cpu").detach().numpy()
 
-    def predict_from_topics(self, theta, PC, TC, eta_bn_prop=0.0):
+    def predict_from_topics(self, theta, PC, TC, DR, eta_bn_prop=0.0):
         """
         Predict label probabilities from each topic
         """
@@ -177,10 +183,12 @@ class Scholar(object):
             PC = torch.Tensor(PC)
         if TC is not None:
             TC = torch.Tensor(TC)
-        probs = self._model.predict_from_theta(theta, PC, TC)
+        if DR is not None:
+            DR = torch.Tensor(DR)
+        probs = self._model.predict_from_theta(theta, PC, TC, DR)
         return probs.to("cpu").detach().numpy()
 
-    def get_losses(self, X, Y, PC, TC, eta_bn_prop=0.0, n_samples=0):
+    def get_losses(self, X, Y, PC, TC, DR, eta_bn_prop=0.0, n_samples=0):
         """
         Compute and return the loss values for all instances in X, Y, PC, and TC averaged over multiple samples
         """
@@ -193,6 +201,8 @@ class Scholar(object):
             PC = np.expand_dims(PC, axis=0)
         if TC is not None and batch_size == 1:
             TC = np.expand_dims(TC, axis=0)
+        if DR is not None and batch_size == 1:
+            DR = np.expand_dims(DR, axis=0)
         X = torch.Tensor(X).to(self.device)
         if Y is not None:
             Y = torch.Tensor(Y).to(self.device)
@@ -200,15 +210,17 @@ class Scholar(object):
             PC = torch.Tensor(PC).to(self.device)
         if TC is not None:
             TC = torch.Tensor(TC).to(self.device)
+        if DR is not None:
+            DR = torch.Tensor(DR).to(self.device)
         if n_samples == 0:
             _, _, _, temp = self._model(
-                X, Y, PC, TC, do_average=False, var_scale=0.0, eta_bn_prop=eta_bn_prop
+                X, Y, PC, TC, DR, do_average=False, var_scale=0.0, eta_bn_prop=eta_bn_prop
             )
             loss, NL, KLD = temp
             losses = loss.to("cpu").detach().numpy()
         else:
             _, _, _, temp = self._model(
-                X, Y, PC, TC, do_average=False, var_scale=1.0, eta_bn_prop=eta_bn_prop
+                X, Y, PC, TC, DR, do_average=False, var_scale=1.0, eta_bn_prop=eta_bn_prop
             )
             loss, NL, KLD = temp
             losses = loss.to("cpu").detach().numpy()
@@ -218,6 +230,7 @@ class Scholar(object):
                     Y,
                     PC,
                     TC,
+                    DR,
                     do_average=False,
                     var_scale=1.0,
                     eta_bn_prop=eta_bn_prop,
@@ -228,7 +241,7 @@ class Scholar(object):
 
         return losses
 
-    def compute_theta(self, X, Y, PC, TC, eta_bn_prop=0.0):
+    def compute_theta(self, X, Y, PC, TC, DR, eta_bn_prop=0.0):
         """
         Return the latent document representation (mean of posterior of theta) for a given batch of X, Y, PC, and TC
         """
@@ -241,6 +254,8 @@ class Scholar(object):
             PC = np.expand_dims(PC, axis=0)
         if TC is not None and batch_size == 1:
             TC = np.expand_dims(TC, axis=0)
+        if DR is not None and batch_size == 1:
+            DR = np.expand_dims(DR, axis=0)
 
         X = torch.Tensor(X).to(self.device)
         if Y is not None:
@@ -249,8 +264,10 @@ class Scholar(object):
             PC = torch.Tensor(PC).to(self.device)
         if TC is not None:
             TC = torch.Tensor(TC).to(self.device)
+        if DR is not None:
+            DR = torch.Tensor(DR).to(self.device)
         theta, _, _, _ = self._model(
-            X, Y, PC, TC, do_average=False, var_scale=0.0, eta_bn_prop=eta_bn_prop
+            X, Y, PC, TC, DR, do_average=False, var_scale=0.0, eta_bn_prop=eta_bn_prop
         )
 
         return theta.to("cpu").detach().numpy()
@@ -319,18 +336,26 @@ class torchScholar(nn.Module):
         self,
         config,
         alpha,
-        update_embeddings=True,
         init_emb=None,
         bg_init=None,
         device="cpu",
         classify_from_covars=True,
         classify_from_topics=True,
+        classify_from_doc_reps=True,
     ):
         super(torchScholar, self).__init__()
 
         # load the configuration
         self.vocab_size = config["vocab_size"]
         self.words_emb_dim = config["embedding_dim"]
+        self.zero_out_embeddings = config["zero_out_embeddings"]        
+        self.reconstruct_bow = config["reconstruct_bow"]
+        self.doc_reps_dim = config["doc_reps_dim"]
+        self.attend_over_doc_reps = config["attend_over_doc_reps"]
+        self.use_doc_layer = config["use_doc_layer"]
+        self.doc_reconstruction_weight = config["doc_reconstruction_weight"]
+        self.doc_reconstruction_temp = config["doc_reconstruction_temp"]
+        self.doc_reconstruction_min_count = config["doc_reconstruction_min_count"]
         self.n_topics = config["n_topics"]
         self.n_labels = config["n_labels"]
         self.n_prior_covars = config["n_prior_covars"]
@@ -346,6 +371,7 @@ class torchScholar(nn.Module):
         self.device = device
         self.classify_from_covars = classify_from_covars
         self.classify_from_topics = classify_from_topics
+        self.classify_from_doc_reps = classify_from_doc_reps
 
         # create a layer for prior covariates to influence the document prior
         if self.n_prior_covars > 0:
@@ -355,10 +381,7 @@ class torchScholar(nn.Module):
         else:
             self.prior_covar_weights = None
 
-        # create the encoder
-        self.embeddings_x_layer = nn.Linear(
-            self.vocab_size, self.words_emb_dim, bias=False
-        )
+        # create the encoder    
         emb_size = self.words_emb_dim
         classifier_input_dim = 0
         if self.classify_from_topics:
@@ -371,20 +394,42 @@ class torchScholar(nn.Module):
             emb_size += self.n_topic_covars
             if self.classify_from_covars:
                 classifier_input_dim += self.n_topic_covars
+        if self.doc_reps_dim is not None:
+            if self.attend_over_doc_reps:
+                self.attention_vec = torch.nn.Parameter(
+                    torch.rand(self.doc_reps_dim)
+                ).to(self.device)
+            if self.use_doc_layer:
+                emb_size += self.words_emb_dim
+                self.doc_layer = nn.Linear(
+                    self.doc_reps_dim, self.words_emb_dim
+                ).to(self.device)
+            else:
+                emb_size += self.doc_reps_dim
+            if self.classify_from_doc_reps:
+                classifier_input_dim += self.doc_reps_dim
         if self.n_labels > 0:
             emb_size += self.n_labels
 
         self.encoder_dropout_layer = nn.Dropout(p=0.2)
-
-        if not update_embeddings:
-            self.embeddings_x_layer.weight.requires_grad = False
-        if init_emb is not None:
-            self.embeddings_x_layer.weight.data.copy_(torch.from_numpy(init_emb)).to(
-                self.device
+        
+        self.embeddings_x = torch.nn.ParameterDict()
+        # initialize each embedding
+        for emb_name, (emb_data, update) in init_emb.items():
+            self.embeddings_x[emb_name] = torch.nn.Parameter(
+                torch.zeros(
+                    size=(self.words_emb_dim, self.vocab_size)
+                ).to(self.device),
+                requires_grad=update,
             )
-        else:
-            xavier_uniform_(self.embeddings_x_layer.weight)
-
+            if emb_data is not None:
+                (self.embeddings_x[emb_name]
+                     .data.copy_(torch.from_numpy(emb_data)).to(self.device)
+                )
+            else:
+                kaiming_uniform_(self.embeddings_x[emb_name], a=np.sqrt(5))         
+                xavier_uniform_(self.embeddings_x[emb_name])
+        
         # create the mean and variance components of the VAE
         self.mean_layer = nn.Linear(emb_size, self.n_topics)
         self.logvar_layer = nn.Linear(emb_size, self.n_topics)
@@ -478,6 +523,7 @@ class torchScholar(nn.Module):
         Y,
         PC,
         TC,
+        DR,
         compute_loss=True,
         do_average=True,
         eta_bn_prop=1.0,
@@ -492,6 +538,7 @@ class torchScholar(nn.Module):
         :param Y: np.array of labels [batch_size x n_classes]
         :param PC: np.array of covariates influencing the prior [batch_size x n_prior_covars]
         :param TC: np.array of covariates with explicit topic deviations [batch_size x n_topic_covariates]
+        :param DR: np.array of document representations [batch_size x doc_reps_dim]
         :param compute_loss: if True, compute and return the loss
         :param do_average: if True, average the loss over the minibatch
         :param eta_bn_prop: (float) a weight between 0 and 1 to interpolate between using and not using the final batchnorm layer
@@ -501,16 +548,42 @@ class torchScholar(nn.Module):
         :param l1_beta_ci: np.array of prior variances on topic-covariate interactions
         :return: document representation; reconstruction; label probs; (loss, if requested)
         """
+        en0_x = []
 
-        # embed the word counts
-        en0_x = self.embeddings_x_layer(X)
+        deviation_covar_idx = 0
+        for emb_name, embedding in self.embeddings_x.items():
+            mapped_embeddings = torch.mm(X, embedding.T)
+            if 'background' == emb_name:
+                en0_x.append(mapped_embeddings)
+            else:
+                deviation_covar = PC[:, deviation_covar_idx].view(-1, 1)
+                en0_x.append(mapped_embeddings * deviation_covar)
+                deviation_covar_idx += 1
+        en0_x = torch.stack(en0_x).mean(0)
+        if self.zero_out_embeddings:
+            en0_x = en0_x * 0
         encoder_parts = [en0_x]
-
+        
         # append additional components to the encoder, if given
         if self.n_prior_covars > 0:
             encoder_parts.append(PC)
         if self.n_topic_covars > 0:
             encoder_parts.append(TC)
+        if self.doc_reps_dim is not None:
+            dr_out = torch.clamp(DR, min=-40)
+
+            if self.attend_over_doc_reps:
+                mask = dr_out[:, :, 0] == 0
+
+                # do masked softmax                
+                attn_weights = torch.matmul(dr_out, self.attention_vec)
+                attn = torch.softmax(attn_weights.masked_fill(mask, -1e32), dim=-1)
+                dr_out = (dr_out * attn.unsqueeze(-1)).sum(1) # TODO: bmm instead?
+                
+            if self.use_doc_layer:
+                dr_out = F.softplus(self.doc_layer(dr_out))
+            
+            encoder_parts.append(dr_out)
         if self.n_labels > 0:
             encoder_parts.append(Y)
 
@@ -570,6 +643,14 @@ class torchScholar(nn.Module):
         X_recon_no_bn = F.softmax(eta, dim=1)
         X_recon = eta_bn_prop * X_recon_bn + (1.0 - eta_bn_prop) * X_recon_no_bn
 
+        # reconstruct the document representation
+        X_soft_recon = None
+        if self.doc_reconstruction_temp is not None:
+            X_soft_recon = (
+                eta_bn_prop * F.softmax(eta_bn / self.doc_reconstruction_temp, dim=1) 
+                + (1.0 - eta_bn_prop) * F.softmax(eta / self.doc_reconstruction_temp, dim=1) 
+            )
+        
         # predict labels
         Y_recon = None
         if self.n_labels > 0:
@@ -582,6 +663,8 @@ class torchScholar(nn.Module):
                     classifier_inputs.append(PC)
                 if self.n_topic_covars > 0:
                     classifier_inputs.append(TC)
+            if self.classify_from_doc_reps:
+                classifier_inputs.append(DR)
 
             if len(classifier_inputs) > 1:
                 classifier_input = torch.cat(classifier_inputs, dim=1).to(self.device)
@@ -621,8 +704,10 @@ class torchScholar(nn.Module):
                 self._loss(
                     X,
                     Y,
+                    DR,
                     X_recon,
                     Y_recon,
+                    X_soft_recon,
                     prior_mean,
                     prior_logvar,
                     posterior_mean_bn,
@@ -640,8 +725,10 @@ class torchScholar(nn.Module):
         self,
         X,
         Y,
+        DR,
         X_recon,
         Y_recon,
+        X_soft_recon,
         prior_mean,
         prior_logvar,
         posterior_mean,
@@ -652,12 +739,38 @@ class torchScholar(nn.Module):
         l1_beta_ci=None,
     ):
 
-        # compute reconstruction loss
-        NL = -(X * (X_recon + 1e-10).log()).sum(1)
+        NL = 0.
+        # compute bag-of-words reconstruction loss
+        if self.reconstruct_bow:
+            NL += -(X * (X_recon + 1e-10).log()).sum(1)
+
+        # match a "smoothed" representation of the document using BERT probs
+        if X_soft_recon is None and self.doc_reconstruction_weight is not None:
+            alpha = self.doc_reconstruction_weight
+            smoothed_x = (
+                (1 - alpha) * X 
+                + alpha * DR * X.sum(1, keepdim=True)
+            )
+            NL += -(smoothed_x * (X_recon + 1e-10).log()).sum(1)
+
+        # more faithful knowledge distillation
+        if X_soft_recon is not None:
+            alpha = self.doc_reconstruction_weight
+            t = self.doc_reconstruction_temp
+            
+            X_soft = torch.softmax(DR / t, dim=-1) * X.sum(1, keepdim=True) # multiply probabilities by counts
+            X_soft = X_soft * (X_soft > self.doc_reconstruction_min_count).float()
+
+            kd_loss = (alpha * t * t) * -(X_soft * (X_soft_recon + 1e-10).log()).sum(1)
+            standard_loss = (1 - alpha) * -(X * (X_recon + 1e-10).log()).sum(1)
+
+            # overwrite the NL loss (more of a safeguard than anything)
+            NL = kd_loss + standard_loss
+        
         # compute label loss
         if self.n_labels > 0:
             NL += -(Y * (Y_recon + 1e-10).log()).sum(1) * self.classifier_loss_weight
-
+        
         # compute KLD
         prior_var = prior_logvar.exp()
         posterior_var = posterior_logvar.exp()
@@ -709,7 +822,7 @@ class torchScholar(nn.Module):
         else:
             return loss, NL, KLD
 
-    def predict_from_theta(self, theta, PC, TC):
+    def predict_from_theta(self, theta, PC, TC, DR):
         # Predict labels from a distribution over topics
         Y_recon = None
         if self.n_labels > 0:
@@ -722,6 +835,9 @@ class torchScholar(nn.Module):
                     classifier_inputs.append(PC)
                 if self.n_topic_covars > 0:
                     classifier_inputs.append(TC)
+            if self.classify_from_doc_reps:
+                classifier_inputs.append(DR)
+            
             if len(classifier_inputs) > 1:
                 classifier_input = torch.cat(classifier_inputs, dim=1).to(self.device)
             else:

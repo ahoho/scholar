@@ -95,6 +95,13 @@ def main(args):
         help="Exclude words that occur in more than this proportion of documents",
     )
     parser.add_argument(
+        "--tokenized",
+        action="store_true",
+        dest="tokenized",
+        default=False,
+        help="Use tokenized_text json element instead of tokenizing text",
+    )
+    parser.add_argument(
         "--keep-num",
         action="store_true",
         dest="keep_num",
@@ -166,6 +173,7 @@ def main(args):
     stopwords = options.stopwords
     if stopwords == "None":
         stopwords = None
+    tokenized = options.tokenized
     keep_num = options.keep_num
     keep_alphanum = options.keep_alphanum
     strip_html = options.strip_html
@@ -189,6 +197,7 @@ def main(args):
         ngram_range,
         vocab_size,
         stopwords,
+        tokenized,
         keep_num,
         keep_alphanum,
         strip_html,
@@ -210,17 +219,19 @@ def preprocess_data(
     ngram_range=(1, 1),
     vocab_size=None,
     stopwords=None,
+    tokenized=False,
     keep_num=False,
     keep_alphanum=False,
     strip_html=False,
     lower=True,
     min_word_length=3,
-    max_doc_length=5000,
+    max_doc_length=50000,
     label_fields=None,
     workers=4,
     proc_multiplier=500,
 ):
 
+    min_doc_len = 50 #hardcoded for now, needs to be added a command line custom processing option
     if stopwords == "mallet":
         print("Using Mallet stopwords")
         stopword_list = fh.read_text(os.path.join("stopwords", "mallet_stopwords.txt"))
@@ -267,6 +278,8 @@ def preprocess_data(
     test_ids, test_parsed, test_labels = [], [], []
 
     print("Parsing documents")
+    if (tokenized):
+        print("Using tokenized_text element as the source of text to process")
     word_counts = Counter()
     doc_counts = Counter()
 
@@ -279,6 +292,7 @@ def preprocess_data(
     kwargs = {
         "strip_html": strip_html,
         "lower": lower,
+        "tokenized": tokenized,
         "keep_numbers": keep_num,
         "keep_alphanum": keep_alphanum,
         "min_length": min_word_length,
@@ -295,6 +309,8 @@ def preprocess_data(
     for i, group in enumerate(chunkize(iter(train_items), chunksize=chunksize)):
         print(f"On training chunk {i} of {len(train_items) // chunksize}", end="\r")
         for ids, tokens, labels in pool.imap(partial(_process_item, **kwargs), group):
+            #if len(tokens)<min_doc_len:
+                #continue
             # store the parsed documents
             if ids is not None:
                 train_ids.append(ids)
@@ -422,16 +438,26 @@ def preprocess_data(
 
 # to pass to pool.imap
 def _process_item(item, **kwargs):
-    text = item["text"]
     label_fields = kwargs.pop("label_fields", None)
     labels = None
     if label_fields:
         # TODO: probably don't want blind str conversion here
         labels = {label_field: str(item[label_field]) for label_field in label_fields}
-    if text:
-        tokens, _ = tokenize(text, **kwargs)
+    tokenized = kwargs.pop("tokenized", None)
+    if (tokenized):
+        # Use already-tokenized text provided in the json
+        text = item["tokenized_text"]
+        if text:
+            tokens = text.split()
+        else:
+            tokens = []
     else:
-        tokens = []
+        # Get the text in the json and tokenize it
+        text = item["text"]
+        if text:
+            tokens, _ = tokenize(text, **kwargs)
+        else:
+            tokens = []
     return item.get("id", None), tokens, labels
 
 

@@ -1,0 +1,21 @@
+#!/bin/csh
+################################################################
+# Generate spreadsheet to compare runs in hyperparameter sweeps
+#
+#  Usage: ./Sweep_results.csh /workspace/kd-topic-modeling/results/sweep/20ng_scholar_kd
+#           > outfile.csv
+#
+# Then look for max value in, e.g., the npmi_value column
+#
+################################################################
+# Directory containing sweeps from multiple_run_scholar.py
+# TO-DO: make this a commandline argument rather than hardwired
+
+if ( "$1" == "" ) then
+    echo "Usage: $0 /workspace/kd-topic-modeling/results/sweep/DATASET_NAME > outfile.csv"
+else 
+  foreach x ( `ls $1/*/dev_metrics.csv` )
+    echo $x
+    cat $x
+  end
+endif

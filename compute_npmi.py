@@ -52,14 +52,16 @@ def compute_npmi(topics_file, ref_vocab, ref_counts, n_vals, cols_to_skip=0, out
         fh.write_list_to_text(lines, output_file)
 
 
-def compute_npmi_at_n(topics, ref_vocab, ref_counts, n=10, cols_to_skip=0, silent=False):
+def compute_npmi_at_n(
+    topics, ref_vocab, ref_counts, n=10, cols_to_skip=0, silent=False, return_mean=True
+):
 
     vocab_index = dict(zip(ref_vocab, range(len(ref_vocab))))
     n_docs, _ = ref_counts.shape
 
     npmi_means = []
     for topic in topics:
-        words = topic.split()[cols_to_skip:]
+        words = topic.strip().split()[cols_to_skip:]
         npmi_vals = []
         for word_i, word1 in enumerate(words[:n]):
             if word1 in vocab_index:
@@ -89,6 +91,35 @@ def compute_npmi_at_n(topics, ref_vocab, ref_counts, n=10, cols_to_skip=0, silen
         npmi_means.append(np.mean(npmi_vals))
     if not silent:
         print(np.mean(npmi_means))
+    if return_mean:
+        return np.mean(npmi_means)
+    else:
+        return np.array(npmi_means)
+
+def compute_npmi_at_n_during_training(beta, ref_counts, n=10, smoothing=0.01):
+
+    n_docs, _ = ref_counts.shape
+
+    n_topics, vocab_size = beta.shape
+
+    npmi_means = []
+    for k in range(n_topics):
+        order = np.argsort(beta[k, :])[::-1]
+        indices = order[:n]
+        npmi_vals = []
+        for i, index1 in enumerate(indices):
+            for index2 in indices[i+1:n]:
+                col1 = np.array((ref_counts[:, index1] > 0).todense(), dtype=int) + smoothing
+                col2 = np.array((ref_counts[:, index2] > 0).todense(), dtype=int) + smoothing
+                c1 = col1.sum()
+                c2 = col2.sum()
+                c12 = np.sum(col1 * col2)
+                if c12 == 0:
+                    npmi = 0.0
+                else:
+                    npmi = (np.log10(n_docs) + np.log10(c12) - np.log10(c1) - np.log10(c2)) / (np.log10(n_docs) - np.log10(c12))
+                npmi_vals.append(npmi)
+        npmi_means.append(np.mean(npmi_vals))
     return np.mean(npmi_means)
 
 

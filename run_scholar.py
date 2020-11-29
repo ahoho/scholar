@@ -1,6 +1,6 @@
 import os
 import sys
-from optparse import OptionParser
+import argparse
 
 import gensim
 import git
@@ -11,246 +11,336 @@ from tqdm import tqdm
 
 import file_handling as fh
 from scholar import Scholar
-from compute_npmi import compute_npmi_at_n
+from compute_npmi import compute_npmi_at_n_during_training
 
 
-def main(args):
-    usage = "%prog input_dir"
-    parser = OptionParser(usage=usage)
-    parser.add_option(
+def main(call=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input_directory")
+    parser.add_argument(
         "-k",
         dest="n_topics",
         type=int,
         default=20,
-        help="Size of latent representation (~num topics): default=%default",
+        help="Size of latent representation (~num topics)",
     )
-    parser.add_option(
+    parser.add_argument(
         "-l",
         dest="learning_rate",
         type=float,
         default=0.002,
-        help="Initial learning rate: default=%default",
+        help="Initial learning rate",
     )
-    parser.add_option(
+    parser.add_argument(
+        "--eta-bn-anneal-step-const",
+        type=float,
+        default=0.75,
+        help="When to terminate batch-norm annealing, as a percentage of total epochs"
+    )
+
+    parser.add_argument(
         "-m",
         dest="momentum",
         type=float,
         default=0.99,
-        help="beta1 for Adam: default=%default",
+        help="beta1 for Adam",
     )
-    parser.add_option(
+    parser.add_argument(
         "--batch-size",
         dest="batch_size",
         type=int,
         default=200,
-        help="Size of minibatches: default=%default",
+        help="Size of minibatches",
     )
-    parser.add_option(
-        "--epochs", type=int, default=200, help="Number of epochs: default=%default"
+    parser.add_argument(
+        "--epochs", type=int, default=200, help="Number of epochs"
     )
-    parser.add_option(
+    parser.add_argument(
         "--patience",
         type=int,
         default=10,
         help="Number of epochs to wait without improvement to dev-metric",
     )
-    parser.add_option(
+    parser.add_argument(
         "--dev-metric",
         dest="dev_metric",
         type=str,
         default="perplexity",  # TODO: constrain options
         help="Optimize accuracy, perplexity, or internal npmi",
     )
-    parser.add_option(
+    parser.add_argument(
+        "--npmi-words",
+        type=int,
+        default=10,
+        help="Number of words to use when calculating npmi"
+    )
+    parser.add_argument(
         "--train-prefix",
         type=str,
         default="train",
-        help="Prefix of train set: default=%default",
+        help="Prefix of train set",
     )
-    parser.add_option(
+    parser.add_argument(
         "--dev-prefix",
         type=str,
         default=None,
-        help="Prefix of dev set: default=%default.",
+        help="Prefix of dev set.",
     )
-    parser.add_option(
+    parser.add_argument(
         "--test-prefix",
         type=str,
         default=None,
-        help="Prefix of test set: default=%default",
+        help="Prefix of test set",
     )
-    parser.add_option(
+    parser.add_argument(
+        "--no-bow-reconstruction-loss",
+        action="store_false",
+        dest="reconstruct_bow",
+        default=True,
+        help="Include the standard reconstruction of document word counts",
+    )
+    parser.add_argument(
         "--labels",
         type=str,
         default=None,
-        help="Read labels from input_dir/[train|test].labels.csv: default=%default",
+        help="Read labels from input_dir/[train|test].labels.csv",
     )
-    parser.add_option(
+    parser.add_argument(
         "--prior-covars",
         type=str,
         default=None,
-        help="Read prior covariates from files with these names (comma-separated): default=%default",
+        help="Read prior covariates from files with these names (comma-separated)",
     )
-    parser.add_option(
+    parser.add_argument(
         "--topic-covars",
         type=str,
         default=None,
-        help="Read topic covariates from files with these names (comma-separated): default=%default",
+        help="Read topic covariates from files with these names (comma-separated)",
     )
-    parser.add_option(
+    parser.add_argument(
         "--interactions",
         action="store_true",
         default=False,
-        help="Use interactions between topics and topic covariates: default=%default",
+        help="Use interactions between topics and topic covariates",
     )
-
-    parser.add_option(
-        "--classifier-layers",
-        default=1,
-        type=int,
-        help="Number of classifier layers (int between 0 and 2)"
-    )
-    parser.add_option(
-        "--classifier-dropout",
-        default=0.,
-        type=float,
-        help="Dropout to use after last classifier "
-    )
-    parser.add_option(
+    parser.add_argument(
         "--no-covars-predict",
         action="store_false",
         dest="covars_predict",
         default=True,
-        help="Do not use covariates as input to classifier: default=%default",
+        help="Do not use covariates as input to classifier",
     )
-    parser.add_option(
+    parser.add_argument(
         "--no-topics-predict",
         action="store_false",
         dest="topics_predict",
         default=True,
-        help="Do not use topics as input to classifier: default=%default",
+        help="Do not use topics as input to classifier",
     )
-    parser.add_option(
+    parser.add_argument(
         "--min-prior-covar-count",
         type=int,
         default=None,
-        help="Drop prior covariates with less than this many non-zero values in the training dataa: default=%default",
+        help="Drop prior covariates with less than this many non-zero values in the training dataa",
     )
-    parser.add_option(
+    parser.add_argument(
         "--min-topic-covar-count",
         type=int,
         default=None,
-        help="Drop topic covariates with less than this many non-zero values in the training dataa: default=%default",
+        help="Drop topic covariates with less than this many non-zero values in the training dataa",
     )
-    parser.add_option(
+    parser.add_argument(
         "--classifier_loss_weight",
         type=float,
         default=1.0,
-        help="Weight to give portion of loss from classification: default=%default",
+        help="Weight to give portion of loss from classification",
     )
-    parser.add_option(
+    parser.add_argument(
         "-r",
         action="store_true",
         default=False,
-        help="Use default regularization: default=%default",
+        help="Use default regularization",
     )
-    parser.add_option(
+    parser.add_argument(
         "--l1-topics",
         type=float,
         default=0.0,
-        help="Regularization strength on topic weights: default=%default",
+        help="Regularization strength on topic weights",
     )
-    parser.add_option(
+    parser.add_argument(
         "--l1-topic-covars",
         type=float,
         default=0.0,
-        help="Regularization strength on topic covariate weights: default=%default",
+        help="Regularization strength on topic covariate weights",
     )
-    parser.add_option(
+    parser.add_argument(
         "--l1-interactions",
         type=float,
         default=0.0,
-        help="Regularization strength on topic covariate interaction weights: default=%default",
+        help="Regularization strength on topic covariate interaction weights",
     )
-    parser.add_option(
+    parser.add_argument(
         "--l2-prior-covars",
         type=float,
         default=0.0,
-        help="Regularization strength on prior covariate weights: default=%default",
+        help="Regularization strength on prior covariate weights",
     )
-    parser.add_option(
+    parser.add_argument(
         "-o",
         dest="output_dir",
         type=str,
         default="output",
-        help="Output directory: default=%default",
+        help="Output directory",
     )
-    parser.add_option(
+    parser.add_argument(
         "--restart",
         action="store_true",
         default=False,
         help="Restart training with model in output-dir",
     )
     
-    parser.add_option(
+    parser.add_argument(
         "--save-at-training-end",
         action="store_true",
         default=False,
         help="Save model at the end of training",
     )
-    parser.add_option(
+
+    parser.add_argument(
         "--emb-dim",
         type=int,
         default=300,
-        help="Dimension of input embeddings: default=%default",
+        help="Dimension of input embeddings",
     )
-    parser.add_option(
-        "--w2v",
-        dest="word2vec_file",
-        type=str,
-        default=None,
-        help="Use this word2vec .bin file to initialize and fix embeddings: default=%default",
+
+    parser.add_argument(
+        "--background-embeddings",
+        nargs="?",
+        const='random',
+        help="`--background-embeddings <optional path to embeddings>`"
     )
-    parser.add_option(
-        "--update-embeddings",
-        default=False,
+    parser.add_argument(
+        "--deviation-embeddings",
+        nargs="?",
+        const='random',
+        help="`--deviation-embeddings <optional path to embeddings>`"
+    )
+    parser.add_argument(
+        "--deviation-embedding-covar",
+        help="The covariate by which to vary the embeddings"
+    )
+
+    parser.add_argument(
+        "--fix-background-embeddings",
+        dest="update_background_embeddings",
+        action="store_false",
+        default=True,
+    )
+    parser.add_argument(
+        "--fix-deviation-embeddings",
+        dest="update_deviation_embeddings",
+        action="store_false",
+        default=True,
+    )
+    parser.add_argument(
+        "--ignore-deviation-embeddings",
         action="store_true",
-        help="Whether to update embeddings (ignored if `w2v` not specified)",
+        default=False,
+        help="Experimental baseline to maintain parameter number",
     )
-    parser.add_option(
+    parser.add_argument(
+        "--zero-out-embeddings",
+        action="store_true",
+        default=False,
+        help="Experimental switch to set all embeddings to 0",
+    )
+
+    parser.add_argument(
+        "--doc-reps-dir",
+        help="Use document representation & specify the location",
+    )
+    parser.add_argument(
+        "--doc-reconstruction-weight",
+        type=float,
+        default=None,
+        help="How much to weigh doc repesentation reconstruction (0 means none)",
+    )
+    parser.add_argument(
+        "--doc-reconstruction-temp",
+        type=float,
+        default=None,
+        help="Temperature to use when softmaxing over the doc reconstruction logits",
+    )
+    parser.add_argument(
+        "--doc-reconstruction-min-count",
+        type=float,
+        default=0.,
+        help="Minimum pseudo-count to accept",
+    )
+    parser.add_argument(
+        "--doc-reconstruction-logit-clipping",
+        type=float,
+        default=None,
+        help="Keep only the teacher logits corresponding to the top `N * x` unique words for each doc",
+    )
+    parser.add_argument(
+        "--attend-over-doc-reps",
+        action="store_true",
+        default=False,
+        help="Attend over the doc-representation sequence",
+    )
+    parser.add_argument(
+        "--use-doc-layer",
+        action="store_true",
+        default=False,
+        help="Use a document projection layer",
+    )
+    parser.add_argument(
+        "--classify-from-doc-reps",
+        action="store_true",
+        default=False,
+        help="Use document representations to classify?"
+    )
+    parser.add_argument(
+        "--randomize-doc-reps",
+        action="store_true",
+        help="Baseline to randomize the document representations"
+    )
+
+    parser.add_argument(
         "--alpha",
         type=float,
         default=1.0,
-        help="Hyperparameter for logistic normal prior: default=%default",
+        help="Hyperparameter for logistic normal prior",
     )
-    parser.add_option(
+    parser.add_argument(
         "--no-bg",
         action="store_true",
         default=False,
-        help="Do not use background freq: default=%default",
+        help="Do not use background freq",
     )
-    parser.add_option(
+    parser.add_argument(
         "--dev-folds",
         type=int,
         default=0,
         help="Number of dev folds. Ignored if --dev-prefix is used. default=%default"
     )
-    parser.add_option(
+    parser.add_argument(
         "--dev-fold",
         type=int,
         default=0,
         help="Fold to use as dev (if dev_folds > 0). Ignored if --dev-prefix is used. default=%default",
     )
-    parser.add_option(
-        "--device", type=int, default=None, help="GPU to use: default=%default"
+    parser.add_argument(
+        "--device", type=int, default=None, help="GPU to use"
     )
-    parser.add_option(
-        "--seed", type=int, default=None, help="Random seed: default=%default"
+    parser.add_argument(
+        "--seed", type=int, default=None, help="Random seed"
     )
 
-    options, args = parser.parse_args(args)
+    options = parser.parse_args(call)
 
-    input_dir = args[0]
+    input_dir = options.input_directory
 
     if options.r:
         options.l1_topics = 1.0
@@ -269,11 +359,11 @@ def main(args):
         seed = None
 
     # load the training data
-    train_X, vocab, row_selector, train_ids = load_word_counts(
+    train_X, vocab, train_row_selector, train_ids = load_word_counts(
         input_dir, options.train_prefix
     )
     train_labels, label_type, label_names, n_labels = load_labels(
-        input_dir, options.train_prefix, row_selector, options
+        input_dir, options.train_prefix, train_row_selector, options.labels
     )
     (
         train_prior_covars,
@@ -283,7 +373,7 @@ def main(args):
     ) = load_covariates(
         input_dir,
         options.train_prefix,
-        row_selector,
+        train_row_selector,
         options.prior_covars,
         options.min_prior_covar_count,
     )
@@ -295,16 +385,37 @@ def main(args):
     ) = load_covariates(
         input_dir,
         options.train_prefix,
-        row_selector,
+        train_row_selector,
         options.topic_covars,
         options.min_topic_covar_count,
+    )
+
+    print("Loading document representations")
+    train_doc_reps = load_doc_reps(
+        options.doc_reps_dir,
+        prefix=options.train_prefix,
+        row_selector=train_row_selector,
+        use_sequences=options.attend_over_doc_reps,
     )
     options.n_train, vocab_size = train_X.shape
     options.n_labels = n_labels
 
+    if (
+        options.doc_reconstruction_logit_clipping is not None 
+        and options.doc_reconstruction_logit_clipping > 0
+    ):
+        # limit the document representations to the top k labels
+        doc_tokens = np.array((train_X > 0).sum(1)).reshape(-1)
+
+        for i, (row, total) in enumerate(zip(train_doc_reps, doc_tokens)):
+            k = options.doc_reconstruction_logit_clipping * total # keep this many logits
+            if k < vocab_size:
+                min_logit = np.quantile(row, 1 - k / vocab_size)
+                train_doc_reps[i, train_doc_reps[i] < min_logit] = -np.inf
+    
     if n_labels > 0:
         print("Train label proportions:", np.mean(train_labels, axis=0))
-
+    
     # split into training and dev if desired
     train_indices, dev_indices = train_dev_split(options, rng)
     train_X, dev_X = split_matrix(train_X, train_indices, dev_indices)
@@ -315,58 +426,79 @@ def main(args):
     train_topic_covars, dev_topic_covars = split_matrix(
         train_topic_covars, train_indices, dev_indices
     )
+    train_doc_reps, dev_doc_reps = split_matrix(
+        train_doc_reps, train_indices, dev_indices
+    )
     if dev_indices is not None:
         dev_ids = [train_ids[i] for i in dev_indices]
         train_ids = [train_ids[i] for i in train_indices]
     else:
         dev_ids = None
-
-    n_train, _ = train_X.shape
     
+    doc_reps_dim = train_doc_reps.shape[-1] if options.doc_reps_dir else None
+    n_train, _ = train_X.shape
+
     # load the dev data
     if options.dev_prefix is not None:
-        dev_X, _, row_selector, dev_ids = load_word_counts(
+        dev_X, _, dev_row_selector, dev_ids = load_word_counts(
             input_dir, options.dev_prefix, vocab=vocab
         )
         dev_labels, _, _, _ = load_labels(
-            input_dir, options.dev_prefix, row_selector, options
+            input_dir, options.dev_prefix, dev_row_selector, options.labels
         )
         dev_prior_covars, _, _, _ = load_covariates(
             input_dir,
             options.dev_prefix,
-            row_selector,
+            dev_row_selector,
             options.prior_covars,
             covariate_selector=prior_covar_selector,
         )
         dev_topic_covars, _, _, _ = load_covariates(
             input_dir,
             options.dev_prefix,
-            row_selector,
+            dev_row_selector,
             options.topic_covars,
             covariate_selector=topic_covar_selector,
         )
-
+        try:
+            dev_doc_reps = load_doc_reps(
+                options.doc_reps_dir,
+                prefix=options.dev_prefix,
+                row_selector=dev_row_selector,
+                use_sequences=options.attend_over_doc_reps,
+            )
+        except FileNotFoundError:
+            print("Dev document representation not found, will set to log of dev_X")
+            dev_doc_reps = np.log(np.array(dev_X.todense()) + 1e-10) # HACK
+    
     # load the test data
+    test_ids = None
     if options.test_prefix is not None:
-        test_X, _, row_selector, test_ids = load_word_counts(
+        test_X, _, test_row_selector, test_ids = load_word_counts(
             input_dir, options.test_prefix, vocab=vocab
         )
         test_labels, _, _, _ = load_labels(
-            input_dir, options.test_prefix, row_selector, options
+            input_dir, options.test_prefix, test_row_selector, options.labels
         )
         test_prior_covars, _, _, _ = load_covariates(
             input_dir,
             options.test_prefix,
-            row_selector,
+            test_row_selector,
             options.prior_covars,
             covariate_selector=prior_covar_selector,
         )
         test_topic_covars, _, _, _ = load_covariates(
             input_dir,
             options.test_prefix,
-            row_selector,
+            test_row_selector,
             options.topic_covars,
             covariate_selector=topic_covar_selector,
+        )
+        test_doc_reps = load_doc_reps(
+            options.doc_reps_dir,
+            prefix=options.test_prefix,
+            row_selector=test_row_selector,
+            use_sequences=options.attend_over_doc_reps,
         )
         n_test, _ = test_X.shape
 
@@ -376,6 +508,37 @@ def main(args):
         test_labels = None
         test_prior_covars = None
         test_topic_covars = None
+        test_doc_reps = None
+
+
+    # collect label data for the deviations
+    if options.deviation_embeddings:
+        if not options.deviation_embedding_covar:
+            raise ValueError("Need to supply a covariate for deviation embeddings")
+
+        # hijack the unused `prior_covars` by storing deviation covar data in these objects
+        # luckily all checks are performed on `n_prior_covars`, which is 0
+        # but the data still get passed around
+        # TODO: does this logic all already happen above?
+
+        deviation_covar = options.deviation_embedding_covar
+        train_prior_covars, _, deviation_covar_names, _ = load_labels(
+            input_dir, options.train_prefix, train_row_selector, deviation_covar
+        )
+        if options.dev_prefix is not None:
+            dev_prior_covars, _, _, _ = load_labels(
+                input_dir, options.dev_prefix, dev_row_selector, deviation_covar
+            )
+        if options.test_prefix is not None:
+            test_prior_covars, _, _, _ = load_labels(
+                input_dir, options.test_prefix, test_row_selector, deviation_covar
+            )
+        # experimental baseline setting
+        if options.ignore_deviation_embeddings:
+            train_prior_covars = np.ones_like(train_prior_covars)
+            dev_prior_covars = np.ones_like(dev_prior_covars)
+            test_prior_covars = np.ones_like(test_prior_covars) 
+
 
     # initialize the background using overall word frequencies
     init_bg = get_init_bg(train_X)
@@ -384,7 +547,13 @@ def main(args):
 
     # combine the network configuration parameters into a dictionary
     network_architecture = make_network(
-        options, vocab_size, label_type, n_labels, n_prior_covars, n_topic_covars
+        options=options,
+        vocab_size=vocab_size,
+        label_type=label_type,
+        n_labels=n_labels,
+        n_prior_covars=n_prior_covars,
+        n_topic_covars=n_topic_covars,
+        doc_reps_dim=doc_reps_dim,
     )
 
     print("Network architecture:")
@@ -392,31 +561,56 @@ def main(args):
         print(key + ":", val)
 
     # load word vectors
-    embeddings, update_embeddings = load_word_vectors(options, rng, vocab)
+    embeddings = {}
+    if options.background_embeddings:
+        fpath = None if options.background_embeddings == 'random' else options.background_embeddings
+        embeddings['background'] = load_word_vectors(
+            fpath=fpath, # if None, they are randomly initialized
+            emb_dim=options.emb_dim,
+            update_embeddings=options.update_background_embeddings,
+            rng=rng,
+            vocab=vocab,
+        )
+    if options.deviation_embeddings:
+        fpath = None if options.deviation_embeddings == 'random' else options.deviation_embeddings
+        for name in deviation_covar_names:
+            embeddings[name] = load_word_vectors(
+                fpath=fpath,
+                emb_dim=options.emb_dim,
+                update_embeddings=options.update_deviation_embeddings,
+                rng=rng,
+                vocab=vocab,
+            )
 
     # create the model
     if options.restart:
         print(f"Loading existing model from '{options.output_dir}'")
         model, _ = load_scholar_model(
-            os.path.join(options.output_dir, "torch_model.pt"), embeddings=embeddings
+            os.path.join(options.output_dir, "torch_model.pt"),
+            embeddings=embeddings,
         )
         model.train()
-        # fine-tuning hack -- if set to 0, will not train classifier
-        model._model.classifier_loss_weight = options.classifier_loss_weight
     else:
         model = Scholar(
             network_architecture,
             alpha=options.alpha,
             learning_rate=options.learning_rate,
             init_embeddings=embeddings,
-            update_embeddings=update_embeddings,
             init_bg=init_bg,
             adam_beta1=options.momentum,
             device=options.device,
             seed=seed,
             classify_from_covars=options.covars_predict,
             classify_from_topics=options.topics_predict,
+            classify_from_doc_reps=options.classify_from_doc_reps,
         )
+
+    if options.randomize_doc_reps:
+        min_dr, max_dr = train_doc_reps.min(), train_doc_reps.max()
+        train_doc_reps = np.random.uniform(min_dr, max_dr, size=train_doc_reps.shape)
+        dev_doc_reps = np.random.uniform(min_dr, max_dr, size=dev_doc_reps.shape)
+        if test_doc_reps is not None:
+            test_doc_reps = np.random.uniform(min_dr, max_dr, size=test_doc_reps.shape)
 
     # make output directory
     fh.makedirs(options.output_dir)
@@ -432,18 +626,21 @@ def main(args):
             Y=train_labels,
             PC=train_prior_covars,
             TC=train_topic_covars,
+            DR=train_doc_reps,
             vocab=vocab,
             prior_covar_names=prior_covar_names,
             topic_covar_names=topic_covar_names,
             training_epochs=options.epochs,
             batch_size=options.batch_size,
             patience=options.patience,
+            eta_bn_anneal_step_const=options.eta_bn_anneal_step_const,
             dev_metric=options.dev_metric,
             rng=rng,
             X_dev=dev_X,
             Y_dev=dev_labels,
             PC_dev=dev_prior_covars,
             TC_dev=dev_topic_covars,
+            DR_dev=dev_doc_reps,
         )
 
     # load best model
@@ -451,7 +648,7 @@ def main(args):
     if not options.save_at_training_end and os.path.exists(model_fpath):
         model, _ = load_scholar_model(model_fpath, embeddings)
         model.eval()
-    else:
+    elif options.epochs > 0:
         save_scholar_model(options, model, epoch=options.epochs, is_final=True)
         model.eval()
     # display and save weights
@@ -465,6 +662,7 @@ def main(args):
             dev_labels,
             dev_prior_covars,
             dev_topic_covars,
+            dev_doc_reps,
             options.batch_size,
             eta_bn_prop=0.0,
         )
@@ -480,6 +678,7 @@ def main(args):
             test_labels,
             test_prior_covars,
             test_topic_covars,
+            test_doc_reps,
             options.batch_size,
             eta_bn_prop=0.0,
         )
@@ -497,6 +696,7 @@ def main(args):
             train_labels,
             train_prior_covars,
             train_topic_covars,
+            train_doc_reps,
             options.output_dir,
             subset="train",
         )
@@ -508,6 +708,7 @@ def main(args):
                 dev_labels,
                 dev_prior_covars,
                 dev_topic_covars,
+                dev_doc_reps,
                 options.output_dir,
                 subset="dev",
             )
@@ -519,6 +720,7 @@ def main(args):
                 test_labels,
                 test_prior_covars,
                 test_topic_covars,
+                test_doc_reps,
                 options.output_dir,
                 subset="test",
             )
@@ -526,7 +728,11 @@ def main(args):
     # print label probabilities for each topic
     if n_labels > 0:
         print_topic_label_associations(
-            options, label_names, model, n_prior_covars, n_topic_covars
+            options,
+            label_names,
+            model,
+            n_prior_covars,
+            n_topic_covars,
         )
 
     # save document representations
@@ -537,6 +743,7 @@ def main(args):
         train_labels,
         train_prior_covars,
         train_topic_covars,
+        train_doc_reps,
         train_ids,
         options.output_dir,
         "train",
@@ -550,6 +757,7 @@ def main(args):
             dev_labels,
             dev_prior_covars,
             dev_topic_covars,
+            dev_doc_reps,
             dev_ids,
             options.output_dir,
             "dev",
@@ -563,6 +771,7 @@ def main(args):
             test_labels,
             test_prior_covars,
             test_topic_covars,
+            test_doc_reps,
             test_ids,
             options.output_dir,
             "test",
@@ -593,15 +802,14 @@ def load_word_counts(input_dir, input_prefix, vocab=None):
     return X, vocab, row_selector, ids
 
 
-def load_labels(input_dir, input_prefix, row_selector, options):
-    labels = None
+def load_labels(input_dir, input_prefix, row_selector, labels=None):
     label_type = None
     label_names = None
     n_labels = 0
     # load the label file if given
-    if options.labels is not None:
+    if labels is not None:
         label_file = os.path.join(
-            input_dir, input_prefix + "." + options.labels + ".csv"
+            input_dir, input_prefix + "." + labels + ".csv"
         )
         if os.path.exists(label_file):
             print("Loading labels from", label_file)
@@ -642,12 +850,13 @@ def load_covariates(
             if os.path.exists(covariates_file):
                 print("Loading covariates from", covariates_file)
                 temp = pd.read_csv(covariates_file, header=0, index_col=0)
-                covariate_names = temp.columns
+                covariate_names = covar_file_name + '_' + temp.columns
                 covariates = np.array(temp.values, dtype=np.float32)
                 # select the rows that match the non-empty documents (from load_word_counts)
                 covariates = covariates[row_selector, :]
                 covariate_list.append(covariates)
                 covariate_names_list.extend(covariate_names)
+
             else:
                 raise (
                     FileNotFoundError(
@@ -681,6 +890,22 @@ def load_covariates(
 
     return covariates, covariate_selector, covariate_names, n_covariates
 
+
+def load_doc_reps(input_dir, prefix, row_selector, use_sequences=False):
+    """
+    Load document representations, an [num_docs x doc_dim] matrix
+    """
+    if input_dir is not None:
+        doc_rep_fpath = os.path.join(input_dir, f"{prefix}.npy")
+        doc_reps = np.load(doc_rep_fpath)
+        if not use_sequences:
+            return doc_reps[row_selector, :]
+        
+        tokens_fpath = os.path.join(input_dir, f"{prefix}.tokens.npy")
+        tokens = np.load(tokens_fpath)[:, :, None]
+        mask = tokens > 0
+        doc_reps = np.insert(doc_reps, [0], mask, axis=2)
+        return doc_reps[row_selector, :]
 
 def train_dev_split(options, rng):
     # randomly split into train and dev
@@ -723,24 +948,25 @@ def get_init_bg(data):
     return bg.reshape(-1)
 
 
-def load_word_vectors(options, rng, vocab):
+def load_word_vectors(fpath, emb_dim, update_embeddings, rng, vocab):
+    
     # load word2vec vectors if given
-
-
-    if options.word2vec_file is not None:
+    if fpath is not None:
         vocab_size = len(vocab)
         vocab_dict = dict(zip(vocab, range(vocab_size)))
         # randomly initialize word vectors for each term in the vocabualry
         embeddings = np.array(
-            rng.rand(options.emb_dim, vocab_size) * 0.25 - 0.5, dtype=np.float32
+            rng.rand(emb_dim, vocab_size) * 0.25 - 0.5, dtype=np.float32
         )
         count = 0
         print("Loading word vectors")
         # load the word2vec vectors
-        binary_file = options.word2vec_file.endswith('bin')
-        pretrained = gensim.models.KeyedVectors.load_word2vec_format(
-            options.word2vec_file, binary=binary_file
-        )
+        if fpath.endswith('.model'):
+            pretrained = gensim.models.Word2Vec.load(fpath)
+        else:
+            pretrained = gensim.models.KeyedVectors.load_word2vec_format(
+                fpath, binary=fpath.endswith('.bin')
+            )
 
         # replace the randomly initialized vectors with the word2vec ones for any that are available
         for word, index in vocab_dict.items():
@@ -749,7 +975,6 @@ def load_word_vectors(options, rng, vocab):
                 embeddings[:, index] = pretrained[word]
 
         print("Found embeddings for %d words" % count)
-        update_embeddings = options.update_embeddings
     else:
         
         update_embeddings = True # always true if unspecified
@@ -759,11 +984,25 @@ def load_word_vectors(options, rng, vocab):
 
 
 def make_network(
-    options, vocab_size, label_type=None, n_labels=0, n_prior_covars=0, n_topic_covars=0
+    options,
+    vocab_size,
+    doc_reps_dim=None,
+    label_type=None,
+    n_labels=0,
+    n_prior_covars=0,
+    n_topic_covars=0,
 ):
     # Assemble the network configuration parameters into a dictionary
     network_architecture = dict(
         embedding_dim=options.emb_dim,
+        zero_out_embeddings=options.zero_out_embeddings,
+        reconstruct_bow=options.reconstruct_bow,
+        doc_reps_dim=doc_reps_dim,
+        attend_over_doc_reps=options.attend_over_doc_reps,
+        use_doc_layer=options.use_doc_layer,
+        doc_reconstruction_weight=options.doc_reconstruction_weight,
+        doc_reconstruction_temp=options.doc_reconstruction_temp,
+        doc_reconstruction_min_count=options.doc_reconstruction_min_count,
         n_topics=options.n_topics,
         vocab_size=vocab_size,
         label_type=label_type,
@@ -790,6 +1029,7 @@ def train(
     Y,
     PC,
     TC,
+    DR,
     vocab,
     prior_covar_names,
     topic_covar_names,
@@ -802,14 +1042,16 @@ def train(
     Y_dev=None,
     PC_dev=None,
     TC_dev=None,
+    DR_dev=None,
     bn_anneal=True,
     init_eta_bn_prop=1.0,
+    eta_bn_anneal_step_const=0.75,
     rng=None,
     min_weights_sq=1e-7,
 ):
     # Train the model
     n_train, vocab_size = X.shape
-    mb_gen = create_minibatch(X, Y, PC, TC, batch_size=batch_size, rng=rng)
+    mb_gen = create_minibatch(X, Y, PC, TC, DR, batch_size=batch_size, rng=rng)
     total_batch = int(n_train / batch_size)
     batches = 0
 
@@ -865,15 +1107,16 @@ def train(
         avg_nl = 0.0
         avg_kld = 0.0
         # Loop over all batches
-        for i in tqdm(range(total_batch)):
+        for i in tqdm(range(total_batch), disable=True):
             # get a minibatch
-            batch_xs, batch_ys, batch_pcs, batch_tcs = next(mb_gen)
+            batch_xs, batch_ys, batch_pcs, batch_tcs, batch_drs = next(mb_gen)
             # do one minibatch update
             cost, recon_y, thetas, nl, kld = model.fit(
                 batch_xs,
                 batch_ys,
                 batch_pcs,
                 batch_tcs,
+                batch_drs,
                 eta_bn_prop=eta_bn_prop,
                 l1_beta=l1_beta,
                 l1_beta_c=l1_beta_c,
@@ -945,12 +1188,14 @@ def train(
                 model.eval()
 
                 # perplexity
+                dev_perplexity = 0.0
                 dev_perplexity = evaluate_perplexity(
                     model,
                     X_dev,
                     Y_dev,
                     PC_dev,
                     TC_dev,
+                    DR_dev,
                     batch_size,
                     eta_bn_prop=eta_bn_prop,
                 )
@@ -958,10 +1203,10 @@ def train(
                 epoch_metrics["perplexity"] = dev_perplexity
 
                 # accuracy
-                dev_accuracy = "N/A"
+                dev_accuracy = 0
                 if network_architecture["n_labels"] > 0:
                     dev_pred_probs = predict_label_probs(
-                        model, X_dev, PC_dev, TC_dev, eta_bn_prop=eta_bn_prop
+                        model, X_dev, PC_dev, TC_dev, DR_dev, eta_bn_prop=eta_bn_prop
                     )
                     dev_predictions = np.argmax(dev_pred_probs, axis=1)
                     dev_accuracy = float(
@@ -970,9 +1215,8 @@ def train(
                     epoch_metrics["accuracy"] = dev_accuracy
 
                 # NPMI
-                topics = generate_topics(model.get_weights(), vocab, n=10)
-                dev_npmi = compute_npmi_at_n(
-                    topics, vocab, ref_counts=X_dev.tocsc(), n=10, silent=True
+                dev_npmi = compute_npmi_at_n_during_training(
+                    model.get_weights(), ref_counts=X_dev.tocsc(), n=options.npmi_words, smoothing=0.,
                 )
                 epoch_metrics["npmi"] = dev_npmi
 
@@ -997,7 +1241,7 @@ def train(
         # anneal eta_bn_prop from 1.0 to 0.0 over training
         if bn_anneal:
             if eta_bn_prop > 0:
-                eta_bn_prop -= 1.0 / float(0.75 * training_epochs)
+                eta_bn_prop -= 1.0 / float(eta_bn_anneal_step_const * training_epochs)
                 if eta_bn_prop < 0:
                     eta_bn_prop = 0.0
 
@@ -1006,7 +1250,7 @@ def train(
     return model
 
 
-def create_minibatch(X, Y, PC, TC, batch_size=200, rng=None):
+def create_minibatch(X, Y, PC, TC, DR, batch_size=200, rng=None):
     # Yield a random minibatch
     while True:
         # Return random data samples of a size 'minibatch_size' at each iteration
@@ -1032,10 +1276,16 @@ def create_minibatch(X, Y, PC, TC, batch_size=200, rng=None):
         else:
             TC_mb = None
 
-        yield X_mb, Y_mb, PC_mb, TC_mb
+        if DR is not None:
+            DR_mb = DR[ixs, :].astype("float32")
+        else:
+            DR_mb = None
 
 
-def get_minibatch(X, Y, PC, TC, batch, batch_size=200):
+        yield X_mb, Y_mb, PC_mb, TC_mb, DR_mb
+
+
+def get_minibatch(X, Y, PC, TC, DR, batch, batch_size=200):
     # Get a particular non-random segment of the data
     n_items, _ = X.shape
     n_batches = int(np.ceil(n_items / float(batch_size)))
@@ -1062,7 +1312,12 @@ def get_minibatch(X, Y, PC, TC, batch, batch_size=200):
     else:
         TC_mb = None
 
-    return X_mb, Y_mb, PC_mb, TC_mb
+    if DR is not None:
+       DR_mb = DR[ixs, :].astype("float32")
+    else:
+        DR_mb = None    
+
+    return X_mb, Y_mb, PC_mb, TC_mb, DR_mb
 
 
 def update_metrics(current, best=None, epoch=None):
@@ -1088,7 +1343,7 @@ def update_metrics(current, best=None, epoch=None):
     return best
 
 
-def predict_label_probs(model, X, PC, TC, batch_size=200, eta_bn_prop=0.0):
+def predict_label_probs(model, X, PC, TC, DR, batch_size=200, eta_bn_prop=0.0):
     # Predict a probability distribution over labels for each instance using the classifier part of the network
 
     n_items, _ = X.shape
@@ -1097,11 +1352,11 @@ def predict_label_probs(model, X, PC, TC, batch_size=200, eta_bn_prop=0.0):
 
     # make predictions on minibatches and then combine
     for i in range(n_batches):
-        batch_xs, batch_ys, batch_pcs, batch_tcs = get_minibatch(
-            X, None, PC, TC, i, batch_size
+        batch_xs, batch_ys, batch_pcs, batch_tcs, batch_drs = get_minibatch(
+            X, None, PC, TC, DR, i, batch_size
         )
         Z, pred_probs = model.predict(
-            batch_xs, batch_pcs, batch_tcs, eta_bn_prop=eta_bn_prop
+            batch_xs, batch_pcs, batch_tcs, batch_drs, eta_bn_prop=eta_bn_prop
         )
         pred_probs_all.append(pred_probs)
 
@@ -1248,7 +1503,7 @@ def print_top_bg(bg, feature_names, n_top_words=10):
     print(np.exp(temp[: -n_top_words - 1 : -1]))
 
 
-def evaluate_perplexity(model, X, Y, PC, TC, batch_size, eta_bn_prop=0.0):
+def evaluate_perplexity(model, X, Y, PC, TC, DR, batch_size, eta_bn_prop=0.0):
     # Evaluate the approximate perplexity on a subset of the data (using words, labels, and covariates)
     doc_sums = np.array(X.sum(axis=1), dtype=np.float32).reshape(-1)
     X = X.astype("float32")
@@ -1258,16 +1513,18 @@ def evaluate_perplexity(model, X, Y, PC, TC, batch_size, eta_bn_prop=0.0):
         PC = PC.astype("float32")
     if TC is not None:
         TC = TC.astype("float32")
+    if DR is not None:
+        DR = DR.astype("float32")
     losses = []
 
     n_items, _ = X.shape
     n_batches = int(np.ceil(n_items / batch_size))
     for i in range(n_batches):
-        batch_xs, batch_ys, batch_pcs, batch_tcs = get_minibatch(
-            X, Y, PC, TC, i, batch_size
+        batch_xs, batch_ys, batch_pcs, batch_tcs, batch_drs = get_minibatch(
+            X, Y, PC, TC, DR, i, batch_size
         )
         batch_losses = model.get_losses(
-            batch_xs, batch_ys, batch_pcs, batch_tcs, eta_bn_prop=eta_bn_prop
+            batch_xs, batch_ys, batch_pcs, batch_tcs, batch_drs, eta_bn_prop=eta_bn_prop
         )
         losses.append(batch_losses)
     losses = np.hstack(losses)
@@ -1308,10 +1565,10 @@ def generate_topics(beta, feature_names, n=100, sparsity_threshold=1e-5):
     return lines
 
 def predict_labels_and_evaluate(
-    model, X, Y, PC, TC, output_dir=None, subset="train", batch_size=200
+    model, X, Y, PC, TC, DR, output_dir=None, subset="train", batch_size=200
 ):
     # Predict labels for all instances using the classifier network and evaluate the accuracy
-    pred_probs = predict_label_probs(model, X, PC, TC, batch_size, eta_bn_prop=0.0)
+    pred_probs = predict_label_probs(model, X, PC, TC, DR, batch_size, eta_bn_prop=0.0)
     np.savez(
         os.path.join(output_dir, "pred_probs." + subset + ".npz"), pred_probs=pred_probs
     )
@@ -1345,7 +1602,7 @@ def print_topic_label_associations(
         else:
             TC = None
 
-        probs = model.predict_from_topics(Z, PC, TC)
+        probs = model.predict_from_topics(Z, PC, TC, DR=None)
         probs_list.append(probs)
         if options.n_labels > 0 and options.n_labels < 7:
             output = str(k) + ": "
@@ -1362,7 +1619,7 @@ def print_topic_label_associations(
 
 
 def save_document_representations(
-    model, X, Y, PC, TC, ids, output_dir, partition, batch_size=200
+    model, X, Y, PC, TC, DR, ids, output_dir, partition, batch_size=200
 ):
     # compute the mean of the posterior of the latent representation for each documetn and save it
     if Y is not None:
@@ -1373,10 +1630,12 @@ def save_document_representations(
     thetas = []
 
     for i in range(n_batches):
-        batch_xs, batch_ys, batch_pcs, batch_tcs = get_minibatch(
-            X, Y, PC, TC, i, batch_size
+        batch_xs, batch_ys, batch_pcs, batch_tcs, batch_drs = get_minibatch(
+            X, Y, PC, TC, DR, i, batch_size
         )
-        thetas.append(model.compute_theta(batch_xs, batch_ys, batch_pcs, batch_tcs))
+        thetas.append(
+            model.compute_theta(batch_xs, batch_ys, batch_pcs, batch_tcs, batch_drs)
+        )
     theta = np.vstack(thetas)
 
     np.savez(
@@ -1414,11 +1673,11 @@ def save_scholar_model(options, model, epoch=0, dev_metrics={}, is_final=False):
     )
 
 
-def load_scholar_model(inpath, embeddings=None):
+def load_scholar_model(inpath, embeddings=None, map_location=None):
     """
     Load the Scholar model
     """
-    checkpoint = torch.load(inpath)
+    checkpoint = torch.load(inpath, map_location=map_location)
     scholar_kwargs = checkpoint["scholar_kwargs"]
     scholar_kwargs["init_embeddings"] = embeddings
 
@@ -1430,5 +1689,5 @@ def load_scholar_model(inpath, embeddings=None):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    main()
 
