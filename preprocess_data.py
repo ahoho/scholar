@@ -225,12 +225,13 @@ def preprocess_data(
     strip_html=False,
     lower=True,
     min_word_length=3,
-    max_doc_length=5000,
+    max_doc_length=50000,
     label_fields=None,
     workers=4,
     proc_multiplier=500,
 ):
 
+    min_doc_len = 50 #hardcoded for now, needs to be added a command line custom processing option
     if stopwords == "mallet":
         print("Using Mallet stopwords")
         stopword_list = fh.read_text(os.path.join("stopwords", "mallet_stopwords.txt"))
@@ -308,6 +309,8 @@ def preprocess_data(
     for i, group in enumerate(chunkize(iter(train_items), chunksize=chunksize)):
         print(f"On training chunk {i} of {len(train_items) // chunksize}", end="\r")
         for ids, tokens, labels in pool.imap(partial(_process_item, **kwargs), group):
+            #if len(tokens)<min_doc_len:
+                #continue
             # store the parsed documents
             if ids is not None:
                 train_ids.append(ids)
