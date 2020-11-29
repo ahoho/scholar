@@ -1013,7 +1013,8 @@ def make_network(
         l1_beta_c_reg=options.l1_topic_covars,
         l1_beta_ci_reg=options.l1_interactions,
         l2_prior_reg=options.l2_prior_covars,
-        classifier_layers=1,
+        classifier_layers=options.classifier_layers,
+        classifier_dropout=options.classifier_dropout,
         classifier_loss_weight=options.classifier_loss_weight,
         use_interactions=options.interactions,
     )

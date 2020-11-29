@@ -361,6 +361,7 @@ class torchScholar(nn.Module):
         self.n_prior_covars = config["n_prior_covars"]
         self.n_topic_covars = config["n_topic_covars"]
         self.classifier_layers = config["classifier_layers"]
+        self.classifier_dropout = config["classifier_dropout"]
         self.classifier_loss_weight = config["classifier_loss_weight"]
         self.use_interactions = config["use_interactions"]
         self.l1_beta_reg = config["l1_beta_reg"]
@@ -470,16 +471,27 @@ class torchScholar(nn.Module):
 
         # create the classifier
         if self.n_labels > 0:
+            self.classifier_dropout_layer = nn.Dropout(p=self.classifier_dropout)
             if self.classifier_layers == 0:
                 self.classifier_layer_0 = nn.Linear(
                     classifier_input_dim, self.n_labels
                 ).to(self.device)
-            else:
+            elif self.classifier_layers == 1:
                 self.classifier_layer_0 = nn.Linear(
                     classifier_input_dim, classifier_input_dim
                 ).to(self.device)
                 self.classifier_layer_1 = nn.Linear(
                     classifier_input_dim, self.n_labels
+                ).to(self.device)
+            elif self.classifier_layers == 2:
+                self.classifier_layer_0 = nn.Linear(
+                    classifier_input_dim, int(classifier_input_dim * 1.5)
+                ).to(self.device)                
+                self.classifier_layer_1 = nn.Linear(
+                    int(classifier_input_dim * 1.5), classifier_input_dim // 2
+                ).to(self.device)
+                self.classifier_layer_2 = nn.Linear(
+                    classifier_input_dim // 2, self.n_labels
                 ).to(self.device)
 
         # create a final batchnorm layer
@@ -664,12 +676,15 @@ class torchScholar(nn.Module):
             elif self.classifier_layers == 1:
                 cls0 = self.classifier_layer_0(classifier_input)
                 cls0_sp = F.softplus(cls0)
-                decoded_y = self.classifier_layer_1(cls0_sp)
+                cls0_do = self.classifier_dropout_layer(cls0_sp)
+                decoded_y = self.classifier_layer_1(cls0_do)
             else:
                 cls0 = self.classifier_layer_0(classifier_input)
-                cls0_sp = F.softplus(cls0)
+                cls0_do = self.classifier_dropout_layer(cls0)
+                cls0_sp = F.softplus(cls0_do)
                 cls1 = self.classifier_layer_1(cls0_sp)
-                cls1_sp = F.softplus(cls1)
+                cls1_do = self.classifier_dropout_layer(cls1)
+                cls1_sp = F.softplus(cls1_do)
                 decoded_y = self.classifier_layer_2(cls1_sp)
             Y_recon = F.softmax(decoded_y, dim=1)
 
@@ -836,10 +851,12 @@ class torchScholar(nn.Module):
                 decoded_y = self.classifier_layer_1(cls0_sp)
             else:
                 cls0 = self.classifier_layer_0(classifier_input)
-                cls0_sp = F.softplus(cls0)
+                cls0_do = self.classifier_dropout_layer(cls0)
+                cls0_sp = F.softplus(cls0_do)
                 cls1 = self.classifier_layer_1(cls0_sp)
-                cls1_sp = F.softplus(cls1)
-                decoded_y = self.classifier_layer_1(cls1_sp)
+                cls1_do = self.classifier_dropout_layer(cls1) 
+                cls1_sp = F.softplus(cls1_do)
+                decoded_y = self.classifier_layer_2(cls1_sp)
             Y_recon = F.softmax(decoded_y, dim=1)
 
         return Y_recon
