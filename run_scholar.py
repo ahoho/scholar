@@ -156,6 +156,18 @@ def main(call=None):
         help="Weight to give portion of loss from classification",
     )
     parser.add_argument(
+        "--classifier_layers",
+        type=int,
+        default=1,
+        #help="Weight to give portion of loss from classification",
+    )
+    parser.add_argument(
+        "--classifier_dropout",
+        type=float,
+        default=0.0,
+        #help="Weight to give portion of loss from classification",
+    )
+    parser.add_argument(
         "-r",
         action="store_true",
         default=False,
