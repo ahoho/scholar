@@ -346,6 +346,7 @@ def preprocess_data(
     print("Size of full vocabulary=%d" % len(word_counts))
 
     # store possible label values
+    label_lists = {}
     if label_fields:
         labels_df = pd.DataFrame.from_records(train_labels + test_labels)
     for label_name in label_fields:
