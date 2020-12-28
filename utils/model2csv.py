@@ -19,6 +19,23 @@ import os
 import sys
 import csv
 
+
+def softmax_rows_in_2d_array(X):
+    # Adapted from https://nolanbconaway.github.io/blog/2017/softmax-numpy
+    result = np.empty(X.shape)
+    for i in range(X.shape[0]):
+        result[i,:]  = np.exp(X[i,:])
+        result[i,:] /= np.sum(result[i,:])
+    return result 
+
+def softmax_rows_in_2d_dataframe(df):
+    # Convert df to numpy array, softmax rows, convert back
+    input_arr  = df.to_numpy()
+    output_arr = softmax_rows_in_2d_array(input_arr)
+    result     = pd.DataFrame(output_arr)
+    return result
+
+
 def convert_scholar(modeldir, docfile, vocabfile, word_topics_file):
     
     # Read in original documents and the vocabulary file
@@ -26,11 +43,14 @@ def convert_scholar(modeldir, docfile, vocabfile, word_topics_file):
     with open(vocabfile) as f:
         vocab_list = json.load(f)
 
-    # Load beta (topic-word distribution) matrix, transpose to get word-topic matrix,
+    # Load beta matrix (topic-word unnormalized logit weights),
+    # convert to topic-word distributions,
+    # transpose to get word-topic matrix,
     # convert to a dataframe with 'Word' as the first column,
     # output to CSV file.
     beta          = np.load(os.path.join(modeldir, 'beta.npz'))['beta']
-    betaT         = np.transpose(beta)
+    beta_distrib  = softmax_rows_in_2d_array(beta)
+    betaT         = np.transpose(beta_distrib)
     V, K          = betaT.shape
     labels        = ["Topic {}".format(str(i+1)) for i in range(K)]
     betaT_df      = pd.DataFrame(betaT, columns = labels)
