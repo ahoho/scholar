@@ -1,6 +1,26 @@
+  
+model2csv.py
+  Takes topic model output and converts into a standard CSV file format
+  Currently handles scholar; will extend to handle mallet and segan
+
+topwords.py
+  Generates top-words and cloud visualizations using standard CSV file format
+
+topic_alignment.py
+  Takes two models in standard CSV format and shows aligned topics
+
+Sweep_results
+  Shell script to create CSV showing results of hyperparameter sweeps 
+
+generate_topics.py
+  Deprecated: Now use model2csv to convert from Scholar to CSV, then topwords.py
+
+compare_models.py
+  Deprecated: Now use topic_alignment.py
+
+----------------------------------------------------------------
 Notes from Alexander
-
-
+(Alternative to using Sweep_results)
 
 To get the best run out of a directory of runs, the basic move is to just loop through the directory---this is off the top of my head, so excuse any syntax errors
 
