@@ -17,6 +17,13 @@
 #    --modeldir  example/segan_data/models/797EB5C4-F0C7-11E7-8E04-C9F8A43A3182/RANDOM_LDA_K-15_B-100_M-500_L-10_a-0.1_b-0.1_opt-false
 #    --vocabfile example/segan_data/import/segan_files/segan.wvoc
 #    --docids    example/segan_data/import/segan_files/segan.docinfo
+#
+#  Example for Mallet:
+#    python model2csv.py
+#    --package   mallet
+#    --docfile   /Users/resnik/misc/projects/covid_premier_analysis/processed_data/premier_icds_fold_0.txt
+#    --modeldir  /Users/resnik/misc/projects/covid_premier_analysis/mallet_work/fold_0.k25
+#    --vocabfile /Users/resnik/misc/projects/covid_premier_analysis/mallet_work/fold_0.k25/fold_0.k25.word-topic-counts
 #    
 ################################################################
 import argparse
@@ -129,19 +136,69 @@ def convert_segan(modeldir, docfile, vocabfile, word_topics_file, docinfo_file):
     theta_merged_df.to_csv(document_topics_file, index=False)
     sys.stderr.write("Wrote {}\n".format(document_topics_file))
     
+
+#  Example for Mallet:
+#    python model2csv.py
+#    --package   mallet
+#    --docfile   /Users/resnik/misc/projects/covid_premier_analysis/processed_data/premier_icds_fold_0.txt
+#    --modeldir  /Users/resnik/misc/projects/covid_premier_analysis/mallet_work/fold_0.k25
+#    --vocabfile /Users/resnik/misc/projects/covid_premier_analysis/mallet_work/fold_0.k25/fold_0.k25.word-topic-counts
+#    --modelname fold_0.k25
+
+def convert_mallet(modeldir, docfile, vocabfile, word_topics_file, modelname):
+    
+    # Read in original documents (mallet format is docID<tab>label<tab>text)
+    with open(docfile) as f:
+        docs_df = pd.read_csv(docfile, sep='\t', encoding='utf-8', engine='python', names=['docID','label','text'], warn_bad_lines=True, error_bad_lines=False)
+
+    # Read in vocabulary file (the word-topic-counts file contains word in second space-separated column)
+    with open(vocabfile) as f:
+        vocab_lines = [s.split()[1] for s in f.readlines()]
+
+    # Read topic-word weights file
+    #   - Calling it beta below for consistency with scholar
+    #   - Per ParallelTopicModel.java, the mallet file has an unnormalized weight for every word in every topic,
+    #     and most of these will be equal to the smoothing parameter beta (see function printTopicWordWeights)
+    # Normalize and turn these into columns of word-topic matrix
+    # where vocabulary ('Word') is the first column, topics are columns; then
+    # output to CSV file.
+    betaT_df       = pd.DataFrame(vocab_lines, columns = ['Word'])
+    beta_input_df  = pd.read_csv(os.path.join(modeldir, modelname + '.topic-word-weights'), sep='\t', encoding='utf-8', engine='python', header=None, 
+                              names = ['topicnum', 'word', 'weight'], warn_bad_lines=True, error_bad_lines=False)
+    groups         = beta_input_df.groupby('topicnum')
+    for topicnum, group_df in groups:
+        weights = group_df['weight'].values
+        total   = weights.sum()
+        probs   = weights / total
+        betaT_df.loc[:,"Topic {}".format(topicnum+1)] = probs  # https://re-thought.com/how-to-add-new-columns-in-a-dataframe-in-pandas/
+    betaT_df.to_csv(word_topics_file, index=False)
+    sys.stderr.write("Wrote {}\n".format(word_topics_file))
+    
+    # Load theta (document-topic proportions) matrix
+    # Drop document number column
+    # Output to CSV file
+    cols             = ['docnum','docID'] + betaT_df.columns.values.tolist()[1:]
+    theta_df         = pd.read_csv(os.path.join(modeldir,modelname + '.doc-topics'), sep='\t', encoding='utf-8', engine='python', header=None,
+                                       names=cols, warn_bad_lines=True, error_bad_lines=False)
+    theta_df         = theta_df.drop(theta_df.columns[[0]], axis=1)
+    theta_df.to_csv(document_topics_file, index=False)
+    sys.stderr.write("Wrote {}\n".format(document_topics_file))
+
     
 # Handle command line
 parser = argparse.ArgumentParser(description='Converts topic model output into a uniform format using CSV files')
 parser.add_argument('-p','--package',
-                        help='Topic model package: scholar, mallet, segan',   dest='package',      default='scholar')
+                        help='Topic model package: scholar, mallet, segan',                        dest='package',      default='scholar')
 parser.add_argument('-m','--modeldir',
-                        help='Directory containing model output',             dest='modeldir',     default=None)
+                        help='Directory containing model output',                                  dest='modeldir',     default=None)
 parser.add_argument('-d','--docfile',
-                        help='File containing input documents',               dest='docfile',      default=None)
+                        help='File containing input documents',                                    dest='docfile',      default=None)
 parser.add_argument('-v','--vocabfile',
-                        help='File containing vocabulary',                    dest='vocabfile',    default=None)
+                        help='File containing vocabulary',                                         dest='vocabfile',    default=None)
 parser.add_argument('-i','--docinfo',
-                        help='Docinfo file containing docIDs (segan only)',   dest='docinfo_file', default=None)
+                        help='Docinfo file containing docIDs (segan only)',                        dest='docinfo_file', default=None)
+parser.add_argument('-M','--modelname',
+                        help='Name of model, M, where M.model is the output-model (mallet only)',  dest='modelname',    default='mallet')
 parser.add_argument('-w','--word_topics_file',
                         help='Output CSV file for topic-words distribution',  dest='word_topics_file',     default="word_topics.csv")
 parser.add_argument('-D','--document_topics_file',
@@ -155,6 +212,7 @@ modeldir             = args['modeldir']
 docfile              = args['docfile']
 vocabfile            = args['vocabfile']
 docinfo_file         = args['docinfo_file']
+modelname            = args['modelname']
 word_topics_file     = args['word_topics_file']
 document_topics_file = args['document_topics_file']
 
@@ -164,5 +222,7 @@ if (package == 'scholar'):
     convert_scholar(modeldir, docfile, vocabfile, word_topics_file)
 elif (package == 'segan'):
     convert_segan(modeldir, docfile, vocabfile, word_topics_file, docinfo_file)
+elif (package == 'mallet'):
+    convert_mallet(modeldir, docfile, vocabfile, word_topics_file, modelname)
 else:
     sys.stderr.write("Not yet handling package '{}'\n".format(package))

@@ -1,7 +1,7 @@
   
 model2csv.py
   Takes topic model output and converts into a standard CSV file format
-  Currently handles scholar; will extend to handle mallet and segan
+  Currently handles scholar, mallet, and segan topic model output
 
 topwords.py
   Generates top-words and cloud visualizations using standard CSV file format

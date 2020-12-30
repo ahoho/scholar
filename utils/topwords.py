@@ -1,19 +1,23 @@
-################################################################
+############################################################################
 #
 # python topwords.py > top_words.txt
 #
-# Convert LDA topic-words distribution to top N words per topic on stdout
-# and generate topic clouds as theme_clouds.pdf in current directory
+# User-friendly way to look at LDA topic-words distribution
 #
-# Input: hard-wires word_topics.csv as input
+# Input: word_topics.csv (hard wired)
 #   Columns: Word, Pr(word|topic1), ..., Pr(word|topicN)
 #
-# Output: file that can be read as text or opened as .tsv
-#   label <tab> top N words
+# Output:
+#   In stdout: a top-words file that can be read as text or opened as .tsv
+#     label <tab> top N words
+#   In current directory:
+#     THEME_LABEL.pdf files, one for each theme
+#     theme_clouds.pdf containing one theme cloud per page
 #
-# Also produces theme_label.pdf for each theme
+#  To-do: add commandline arguments rather than hardwiring
 #
-################################################################
+#
+############################################################################
 import os
 import sys
 import pandas as pd
