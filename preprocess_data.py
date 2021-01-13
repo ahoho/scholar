@@ -248,6 +248,7 @@ def preprocess_data(
     else:
         stopword_list = []
     stopword_set = {s.strip() for s in stopword_list}
+    print("Number of Stopwords = " + str(len(stopword_set)))
 
     print("Reading data files")
     train_items = fh.LazyJsonlistReader(train_infile)
